@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 
-const ICE_SERVERS = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+import { ICE_SERVERS } from "./iceConfig";
 
 /**
  * useSupervisorMonitor(socket)

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { mixStreams } from "./callRecorder";
+import { ICE_SERVERS } from "./iceConfig";
 
 /**
  * useCallEngine
@@ -16,15 +17,7 @@ import { mixStreams } from "./callRecorder";
  *   const engine = useCallEngine({ socket, role: "executive", name: "Agent Priya" });
  * ---------------------------------------------------------------- */
 
-const ICE_SERVERS = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-    { urls: "stun:stun2.l.google.com:19302" },
-    { urls: "stun:stun3.l.google.com:19302" },
-    { urls: "stun:stun4.l.google.com:19302" },
-  ],
-};
+
 
 export function useCallEngine({ socket, role, name }) {
   const [status, setStatus] = useState("idle"); // idle | ringing-out | ringing-in | connected | ended

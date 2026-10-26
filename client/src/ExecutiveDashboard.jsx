@@ -377,7 +377,7 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
   }
 
   // Real Twilio phone call to the passenger's actual mobile, bridged to
-  // TWILIO_EXECUTIVE_FALLBACK_NUMBER (+917426825253) once they answer —
+  // TWILIO_EXECUTIVE_FALLBACK_NUMBER once they answer —
   // separate from the in-app WebRTC call. Trial-account limit: only works
   // if the passenger's number is itself a Verified Caller ID.
   async function handleCallPassenger() {
@@ -389,7 +389,7 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
     try {
       const data = await apiPost("/telephony/call-passenger", { pnr });
       if (data.ok) {
-        pushToast("Call placed — it'll ring +917426825253 once the passenger answers.", "primary");
+        pushToast("Call placed — it'll ring the executive fallback number once the passenger answers.", "primary");
       } else {
         pushToast(`Call failed: ${data.reason}`, "warn");
       }

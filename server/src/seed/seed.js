@@ -33,7 +33,24 @@ function rand(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function randInt(a, b) { return Math.floor(a + Math.random() * (b - a)); }
 function genPNR() { return String(randInt(1000000000, 9999999999)); }
 
+// Demo password for every seeded account. Override with SEED_PASSWORD (REQUIRED when
+// seeding a production database — never ship the well-known default to the internet).
+const SEED_PASSWORD = process.env.SEED_PASSWORD || "password123";
+
 async function seed() {
+  const uri = process.env.MONGO_URI || "";
+  const isLocalDb = !uri || /^mongodb:\/\/(localhost|127\.0\.0\.1|mongo)[:/]/.test(uri);
+  if (process.env.NODE_ENV === "production" || !isLocalDb) {
+    // Any non-local database (Atlas, etc.) counts as "real". The seed script WIPES users, passengers, complaints, calls, KB etc. Make that explicit.
+    if (process.env.ALLOW_SEED !== "true") {
+      console.error("[seed] Refusing to run against a non-local / production database unless ALLOW_SEED=true. This script DELETES existing data.");
+      process.exit(1);
+    }
+    if (!process.env.SEED_PASSWORD || process.env.SEED_PASSWORD.length < 8) {
+      console.error("[seed] Refusing to run against a non-local / production database without SEED_PASSWORD (min 8 chars) — don't use the public default password.");
+      process.exit(1);
+    }
+  }
   await connectDB();
   console.log("[seed] clearing existing demo collections...");
   await Promise.all([
@@ -44,7 +61,7 @@ async function seed() {
   ]);
 
   // ---- Users ----
-  const passwordHash = await bcrypt.hash("password123", 10);
+  const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
   await User.insertMany([
     { name: "Admin User", username: "admin", passwordHash, role: "admin" },
     { name: "Supervisor Rao", username: "supervisor", passwordHash, role: "supervisor" },
@@ -54,7 +71,7 @@ async function seed() {
     { name: "Agent Vikas", username: "vikas", passwordHash, role: "executive" },
     { name: "Agent Sneha", username: "sneha", passwordHash, role: "executive" },
   ]);
-  console.log("[seed] users created (password for all: password123)");
+  console.log("[seed] users created");
 
   // ---- Trains ----
   const trains = await Train.insertMany(
@@ -126,7 +143,7 @@ async function seed() {
     }
   }
   await Booking.insertMany(allBookings);
-  console.log(`[seed] ${DEMO_PASSENGER_DEFS.length} Passenger Portal logins created (password for all: password123)`);
+  console.log(`[seed] ${DEMO_PASSENGER_DEFS.length} Passenger Portal logins created`);
 
   // ---- RFID tags (100) ----
   const stages = Rfid.STAGES;
@@ -621,7 +638,7 @@ async function seed() {
   ]);
   console.log("[seed] AI knowledge base categories + intents created");
 
-  console.log("\n[seed] DONE. Demo login credentials (all roles, password: password123):");
+  console.log(`\n[seed] DONE. Demo logins use SEED_PASSWORD (${process.env.SEED_PASSWORD ? "from env" : "default: password123"}):`);
   console.log("        admin / supervisor / priya / karan");
 
   await mongoose.disconnect();

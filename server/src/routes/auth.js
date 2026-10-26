@@ -1,6 +1,7 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const { getJwtSecret } = require("../utils/config");
 const { v4: uuidv4 } = require("uuid");
 const User = require("../models/User");
 const Passenger = require("../models/Passenger");
@@ -24,7 +25,7 @@ router.post("/login", validateBody(loginSchema), async (req, res) => {
 
   const token = jwt.sign(
     { id: user._id, name: user.name, role: user.role, username: user.username },
-    process.env.JWT_SECRET || "srlms_dev_secret_change_me",
+    getJwtSecret(),
     signOptions
   );
   res.json({ token, user: { name: user.name, role: user.role, username: user.username } });
@@ -64,7 +65,7 @@ router.post("/passenger-signup", validateBody(passengerSignupSchema), async (req
   const signOptions = expiresIn === "none" ? {} : { expiresIn };
   const token = jwt.sign(
     { id: passenger._id, passengerId: passenger._id, name: passenger.name, role: "passenger", pnr: passenger.pnr },
-    process.env.JWT_SECRET || "srlms_dev_secret_change_me",
+    getJwtSecret(),
     signOptions
   );
   res.status(201).json({ token, user: { passengerId: passenger._id, name: passenger.name, role: "passenger", pnr: passenger.pnr, mobile: passenger.mobile, email: passenger.email || null } });
@@ -88,7 +89,7 @@ router.post("/passenger-login", validateBody(loginSchema), async (req, res) => {
 
   const token = jwt.sign(
     { id: passenger._id, passengerId: passenger._id, name: passenger.name, role: "passenger", pnr: passenger.pnr },
-    process.env.JWT_SECRET || "srlms_dev_secret_change_me",
+    getJwtSecret(),
     signOptions
   );
   res.json({ token, user: { passengerId: passenger._id, name: passenger.name, role: "passenger", pnr: passenger.pnr, mobile: passenger.mobile, email: passenger.email || null } });
@@ -109,7 +110,7 @@ router.post("/customer-session", validateBody(customerSessionSchema), (req, res)
 
   const token = jwt.sign(
     { id: customerId, customerId, name: name || "Passenger", role: "customer" },
-    process.env.JWT_SECRET || "srlms_dev_secret_change_me",
+    getJwtSecret(),
     signOptions
   );
   res.json({ token, user: { customerId, name: name || "Passenger", role: "customer" } });

@@ -15,6 +15,8 @@ const { connectDB } = require("./db");
 const { attachSignaling } = require("./socket/signaling");
 const { generalLimiter, authLimiter } = require("./middleware/rateLimit");
 const { runEscalationSweep } = require("./utils/escalation");
+const { validateEnv, getAllowedOrigins } = require("./utils/config");
+const mongoose = require("mongoose");
 
 const authRoutes = require("./routes/auth");
 const passengerRoutes = require("./routes/passengers");
@@ -43,17 +45,34 @@ process.on("uncaughtException", (err) => {
 });
 
 async function main() {
+  validateEnv(); // throws on unsafe production config (missing/weak JWT_SECRET, etc.)
   await connectDB();
 
   const app = express();
-  app.use(helmet({ contentSecurityPolicy: false })); // CSP off for local dev simplicity; enable/tune before any real deployment
-  app.use(cors());
+
+  // Render / Railway / Fly / Koyeb etc. all sit behind a reverse proxy. Without this,
+  // express-rate-limit sees every user as the proxy's IP (one shared bucket) and
+  // logs a validation error. "1" = trust exactly one proxy hop.
+  app.set("trust proxy", Number(process.env.TRUST_PROXY ?? 1));
+
+  // This service is a pure JSON API + WebSocket server (the UI is a separate static
+  // site), so a CSP header adds nothing here; the other Helmet headers stay on.
+  app.use(helmet({ contentSecurityPolicy: false }));
+
+  const allowedOrigins = getAllowedOrigins(); // null => allow all (local dev)
+  app.use(cors(allowedOrigins ? { origin: allowedOrigins } : {}));
   app.use(express.json());
   app.use(express.urlencoded({ extended: false })); // Twilio webhooks are form-encoded, not JSON
   app.use(mongoSanitize()); // strips $/. operators from req.body/query/params — blocks NoSQL injection attempts
-  app.use(generalLimiter);
+  // Health check for the hosting platform + uptime pingers. 503 if MongoDB is down so the
+  // platform can restart us, 200 otherwise.
+  app.get("/health", (_req, res) => {
+    const dbUp = mongoose.connection.readyState === 1;
+    res.status(dbUp ? 200 : 503).json({ ok: dbUp, db: dbUp ? "up" : "down", uptimeSec: Math.round(process.uptime()), ts: Date.now() });
+  });
+  app.get("/", (_req, res) => res.json({ service: "srlms-server", status: "running" }));
 
-  app.get("/health", (_req, res) => res.json({ ok: true, ts: Date.now() }));
+  app.use(generalLimiter);
 
   app.use("/api/v1/auth", authLimiter, authRoutes); // stricter limit specifically on login/session endpoints
   app.use("/api/v1/passengers", passengerRoutes);
@@ -73,15 +92,26 @@ async function main() {
   });
 
   const server = http.createServer(app);
-  const io = new Server(server, { cors: { origin: "*" } });
+  const io = new Server(server, { cors: { origin: allowedOrigins || "*" } });
   attachSignaling(io);
 
   server.listen(PORT, "0.0.0.0", () => {
     console.log(`SRLMS server (REST API + WebRTC signaling) listening on port ${PORT}`);
-    console.log(`Local:   http://localhost:${PORT}`);
-    console.log(`Network: http://0.0.0.0:${PORT} (use your machine's IP, e.g. http://10.181.125.35:${PORT})`);
-    console.log(`REST base: http://localhost:${PORT}/api/v1`);
+    console.log(`REST base: /api/v1  |  health: /health  |  env: ${process.env.NODE_ENV || "development"}`);
   });
+
+  // Graceful shutdown: hosting platforms send SIGTERM on every deploy/restart.
+  const shutdown = (signal) => {
+    console.log(`[shutdown] ${signal} received, closing...`);
+    io.close();
+    server.close(async () => {
+      await mongoose.disconnect().catch(() => {});
+      process.exit(0);
+    });
+    setTimeout(() => process.exit(0), 8000).unref(); // don't hang forever
+  };
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 
   // CPGRAMS-style auto-escalation: check every 10 minutes for complaints
   // that have sat too long at their current level. See utils/escalation.js

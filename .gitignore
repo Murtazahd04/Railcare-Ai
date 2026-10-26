@@ -10,6 +10,9 @@ build/
 .env
 .env.local
 .env.*.local
+.env.*
+!.env.example
+**/.env
 
 # private docs — contains real credentials, keep out of any public repo/upload
 README.private.md
@@ -24,3 +27,6 @@ ai-service/venv/
 ai-service/voices/
 ai-service/__pycache__/
 *.pyc
+
+# local test / export artefacts
+*.zip

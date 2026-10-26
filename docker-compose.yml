@@ -1,52 +1,58 @@
-version: "3.9"
-
-# Usage:
-#   docker compose up --build                 -> server + client (fast, what most people want)
-#   docker compose --profile ai up --build     -> also starts the AI microservice
-#   docker compose --profile local-db up --build -> also starts a local MongoDB instead of Atlas
+# Local / self-hosted run with Docker.
 #
-# server/.env is still where your real secrets (Mongo URI, JWT secret,
-# Razorpay keys, Twilio fallback number) live — this file only overrides
-# what has to change for container networking (AI_SERVICE_URL).
+#   docker compose up --build                    -> server + client + local MongoDB
+#   docker compose --profile ai up --build       -> also starts the heavy AI microservice
+#
+# Secrets live in server/.env (copy server/.env.example). This file overrides only what has
+# to change for container networking. For free CLOUD hosting see DEPLOYMENT.md instead.
 
 services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
   server:
     build: ./server
+    restart: unless-stopped
     ports:
       - "4000:4000"
     env_file:
       - ./server/.env
     environment:
-      # inside the Docker network, the AI service is reachable by its
-      # service name, not "localhost" — this overrides whatever's in .env.
-      # Harmless if ai-service isn't running: classifier.js falls back
-      # automatically (see README section 8).
-      AI_SERVICE_URL: http://ai-service:8001
+      MONGO_URI: mongodb://mongo:27017/srlms
+      AI_SERVICE_URL: http://ai-service:8001 # harmless if the ai profile is off: classifier.js falls back
+      CORS_ORIGINS: http://localhost:5173
+    depends_on:
+      mongo:
+        condition: service_healthy
 
   client:
-    build: ./client
+    build:
+      context: ./client
+      args:
+        # the BROWSER calls the API, so this is the host-published port, not the service name
+        VITE_BACKEND_URL: http://localhost:4000
+    restart: unless-stopped
     ports:
-      - "5173:5173"
+      - "5173:80"
     depends_on:
       - server
 
   ai-service:
     build: ./ai-service
+    restart: unless-stopped
     ports:
       - "8001:8001"
-    profiles: ["ai"] # only starts with `docker compose --profile ai up`
+    profiles: ["ai"]
     volumes:
-      - ai-models-cache:/root/.cache # keeps downloaded models between restarts
-
-  # optional local MongoDB, if you'd rather not use Atlas.
-  # Switch server/.env's MONGO_URI to mongodb://mongo:27017/srlms to use this.
-  mongo:
-    image: mongo:7
-    ports:
-      - "27017:27017"
-    profiles: ["local-db"]
-    volumes:
-      - mongo-data:/data/db
+      - ai-models-cache:/root/.cache
 
 volumes:
   ai-models-cache:

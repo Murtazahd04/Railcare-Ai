@@ -1,0 +1,52 @@
+# Render Blueprint — one-click backend deploy (free plan).
+# Dashboard -> New -> Blueprint -> pick this repo. Render will ask for the `sync: false` values.
+# The frontend is deployed separately (Vercel/Netlify/Cloudflare) — see DEPLOYMENT.md.
+services:
+  - type: web
+    name: srlms-api
+    runtime: node
+    rootDir: server
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    plan: free
+    region: singapore          # closest free region to India; change if you prefer
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_EXPIRES_IN
+        value: 8h
+      - key: TRUST_PROXY
+        value: "1"
+      - key: JWT_SECRET
+        generateValue: true     # Render creates a strong random value for you
+      - key: MONGO_URI
+        sync: false             # paste your MongoDB Atlas connection string
+      - key: CORS_ORIGINS
+        sync: false             # your frontend URL, e.g. https://srlms.vercel.app
+      # ---- optional integrations (leave blank to disable; the app degrades gracefully) ----
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_PHONE_NUMBER
+        sync: false
+      - key: TWILIO_EXECUTIVE_FALLBACK_NUMBER
+        sync: false
+      - key: TWILIO_WHATSAPP_FROM
+        sync: false
+      - key: TWILIO_WHATSAPP_JOIN_CODE
+        sync: false
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASS
+        sync: false
+      - key: EMAIL_FROM_NAME
+        value: Indian Railways SRLMS
+      - key: SOS_ALERT_EMAIL
+        sync: false

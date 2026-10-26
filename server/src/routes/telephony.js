@@ -133,7 +133,7 @@ async function persistTwilioCall(callSid, body, extra) {
  * localhost directly).
  */
 router.post("/whatsapp/incoming", async (req, res) => {
-  const from = (req.body.From || "").replace(/^whatsapp:/, ""); // e.g. +917426825253
+  const from = (req.body.From || "").replace(/^whatsapp:/, ""); // e.g. +91XXXXXXXXXX
   const body = (req.body.Body || "").trim();
 
   const twiml = new MessagingResponse();
@@ -165,7 +165,7 @@ router.post("/whatsapp/incoming", async (req, res) => {
  *
  * Flow: Twilio calls the passenger's mobile number FROM your Twilio number,
  * plays a short announcement, then bridges the call to
- * TWILIO_EXECUTIVE_FALLBACK_NUMBER (currently +917426825253) — that's the
+ * TWILIO_EXECUTIVE_FALLBACK_NUMBER (set in your .env) — that's the
  * "one number" that actually rings on your end once the passenger picks up.
  *
  * Trial-account reality (same as everywhere else Twilio calling is used):

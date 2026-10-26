@@ -1,0 +1,8 @@
+# Normalise line endings so Windows (CRLF) and Linux/CI (LF) checkouts don't show phantom diffs
+* text=auto
+*.sh text eol=lf
+*.png binary
+*.jpg binary
+*.jfif binary
+*.webp binary
+*.avif binary

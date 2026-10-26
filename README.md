@@ -1,3 +1,5 @@
+> **Deploying?** See **[DEPLOYMENT.md](./DEPLOYMENT.md)** for the step-by-step guide to hosting this project for free (MongoDB Atlas + Render + Vercel).
+
 # SRLMS — Smart Railway Linen Management & AI Voice Calling System
 ### Comprehensive Architecture, System Design, Services Audit & Operational Guide
 

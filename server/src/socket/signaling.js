@@ -5,6 +5,7 @@
  * in on) any live call.
  */
 const jwt = require("jsonwebtoken");
+const { getJwtSecret } = require("../utils/config");
 const Call = require("../models/Call");
 const { scoreUrgency, scoreTranscript, TIER_RANK } = require("../utils/sentiment");
 const { sendEmail } = require("../utils/email");
@@ -23,7 +24,7 @@ function attachSignaling(io) {
       return next();
     }
     try {
-      const payload = jwt.verify(token, process.env.JWT_SECRET || "srlms_dev_secret_change_me");
+      const payload = jwt.verify(token, getJwtSecret());
       socket.data.verified = true;
       socket.data.tokenPayload = payload;
       next();
