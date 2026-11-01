@@ -36,16 +36,16 @@ const STATUS_META = {
 function KpiCard({ icon: Icon, label, value, sub }) {
   return (
     <motion.div
-      whileHover={{ y: -3, boxShadow: "0 8px 20px -6px rgba(22,101,52,0.2)" }}
+      whileHover={{ y: -3, boxShadow: "0 8px 20px -6px rgba(0,61,165,0.15)" }}
       transition={{ duration: 0.18 }}
-      className="flex-1 min-w-[150px] rounded-lg bg-gradient-to-br from-emerald-100 via-green-50 to-white border border-emerald-200 p-4"
+      className="flex-1 min-w-[150px] rounded-lg bg-[#FFFFFF] border border-[#E2E8F0] p-4"
     >
       <div className="flex items-center justify-between mb-2">
-        <span className="text-[11px] uppercase tracking-wider text-emerald-800 font-medium">{label}</span>
-        <Icon size={15} className="text-emerald-700" />
+        <span className="text-[11px] uppercase tracking-wider text-[#64748B] font-medium">{label}</span>
+        <Icon size={15} className="text-[#3B82C4]" />
       </div>
-      <div className="font-mono text-2xl text-emerald-950 font-semibold leading-none">{value}</div>
-      {sub && <div className="text-[11px] text-emerald-700 mt-1.5">{sub}</div>}
+      <div className="font-mono text-2xl text-[#0F172A] font-semibold leading-none">{value}</div>
+      {sub && <div className="text-[11px] text-[#64748B] mt-1.5">{sub}</div>}
     </motion.div>
   );
 }
@@ -71,10 +71,12 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
   const socket = useMemo(() => io(SIGNALING_URL, { auth: { token } }), [token]);
   const engine = useCallEngine({ socket, role: "executive", name: user?.name || "Agent" });
 
-  const passengerName = engine.peerName || "Unknown caller";
-  const topic = engine.callContext?.topic || engine.callContext?.aiIntent || null;
-  const pnr = engine.callContext?.pnr || null;
+  const passengerName = engine.peerName || engine.incoming?.customerName || "Unknown caller";
+  const topic = engine.callContext?.topic || engine.callContext?.aiIntent
+    || engine.incoming?.context?.topic || engine.incoming?.context?.aiIntent || null;
+  const pnr = engine.callContext?.pnr || engine.incoming?.context?.pnr || null;
   const canAct = engine.status === "connected";
+  const hasCall = canAct || Boolean(engine.incoming);
 
   const apiPost = useCallback(async (path, body) => {
     const res = await fetch(`${API_BASE}${path}`, {
@@ -147,6 +149,7 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
   const [savingSupportCase, setSavingSupportCase] = useState(null);
   const [draggingSupportCase, setDraggingSupportCase] = useState(null);
   const [dragOverSupportStatus, setDragOverSupportStatus] = useState(null);
+  const [activeSection, setActiveSection] = useState("calls");
   const toastIdRef = useRef(0);
   const lastStatusRef = useRef("idle");
 
@@ -598,30 +601,86 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
         </div>
       </div>
 
-      {sosAlerts.length > 0 && (
-        <div className="px-4 sm:px-6 pt-4 space-y-2">
-          {sosAlerts.map((a) => (
-            <div key={a.id} className="flex items-center justify-between gap-3 px-4 py-3 rounded-md bg-[#E5484D]/15 border border-[#E5484D]/50 text-[#E5484D] text-xs animate-pulse">
-              <div className="flex items-center gap-2 font-semibold">
-                <Siren className="w-4 h-4 shrink-0" /> SOS — {a.customerName}{a.pnr ? ` (PNR ${a.pnr})` : ""} · {new Date(a.at).toLocaleTimeString()}
-              </div>
-              <button onClick={() => setSosAlerts((prev) => prev.filter((x) => x.id !== a.id))} className="text-[#E5484D] underline underline-offset-2 shrink-0">
-                Dismiss
+      <div className="flex min-h-[calc(100vh-73px)]">
+        <aside className="sticky top-0 h-[calc(100vh-73px)] w-56 shrink-0 overflow-y-auto border-r border-[#E2E8F0] bg-white p-3 max-md:w-16 max-md:px-2">
+          <div className="mb-3 px-2 py-2 text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8] max-md:hidden">
+            Workspace
+          </div>
+          <nav className="space-y-1">
+            {[
+              { id: "calls", label: "Real Call Line", icon: Phone },
+              { id: "support", label: "Passenger Support Queue", icon: MessageCircle },
+              { id: "customers", label: "Customer Lookup", icon: Search },
+              { id: "history", label: "Call History", icon: FileText },
+            ].map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => setActiveSection(id)}
+                aria-current={activeSection === id ? "page" : undefined}
+                title={label}
+                className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-xs transition-colors max-md:justify-center max-md:px-2 ${
+                  activeSection === id
+                    ? "bg-[#EBF3FC] font-semibold text-[#004B87]"
+                    : "text-[#475569] hover:bg-[#F8FAFC]"
+                }`}
+              >
+                <Icon size={16} className="shrink-0" />
+                <span className="max-md:hidden">{label}</span>
+                {id === "calls" && engine.incoming && (
+                  <span className="ml-auto h-2 w-2 animate-pulse rounded-full bg-[#E5484D] max-md:hidden" />
+                )}
+              </button>
+            ))}
+          </nav>
+          {engine.incoming && (
+            <div className="mt-4 rounded-md border border-[#F5A623]/30 bg-[#FFF7E8] p-2.5 text-[11px] text-[#92400E] max-md:hidden">
+              <div className="font-semibold">Incoming call</div>
+              <div className="mt-1 truncate">{engine.incoming.customerName}</div>
+              <button onClick={() => setActiveSection("calls")} className="mt-2 font-semibold underline">
+                Open call
               </button>
             </div>
-          ))}
-        </div>
-      )}
+          )}
+        </aside>
 
-      <div className="px-4 sm:px-6 pt-5 flex gap-3 flex-wrap">
+        <main className="min-w-0 flex-1">
+          {engine.incoming && activeSection !== "calls" && (
+            <button
+              onClick={() => setActiveSection("calls")}
+              className="m-4 flex w-[calc(100%-2rem)] items-center justify-between gap-3 rounded-md border border-[#E5484D]/40 bg-[#FEF3F2] px-4 py-3 text-left text-xs text-[#B42318]"
+            >
+              <span className="font-semibold animate-pulse">Incoming call from {engine.incoming.customerName}</span>
+              <span className="font-semibold">Open call →</span>
+            </button>
+          )}
+
+          {sosAlerts.length > 0 && (
+            <div className="px-4 sm:px-6 pt-4 space-y-2">
+              {sosAlerts.map((a) => (
+                <div key={a.id} className="flex items-center justify-between gap-3 px-4 py-3 rounded-md bg-[#E5484D]/15 border border-[#E5484D]/50 text-[#E5484D] text-xs animate-pulse">
+                  <div className="flex items-center gap-2 font-semibold">
+                    <Siren className="w-4 h-4 shrink-0" /> SOS — {a.customerName}{a.pnr ? ` (PNR ${a.pnr})` : ""} · {new Date(a.at).toLocaleTimeString()}
+                  </div>
+                  <button onClick={() => setSosAlerts((prev) => prev.filter((x) => x.id !== a.id))} className="text-[#E5484D] underline underline-offset-2 shrink-0">
+                    Dismiss
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {activeSection === "calls" && (
+            <div className="px-4 sm:px-6 pt-5 flex gap-3 flex-wrap">
         <KpiCard icon={Phone} label="Total Calls" value={kpis?.total ?? "—"} />
         <KpiCard icon={CheckCircle2} label="AI Resolution" value={kpis ? `${kpis.aiResolutionPct}%` : "—"} sub="resolved without transfer" />
         <KpiCard icon={TrendingUp} label="Transfer Rate" value={kpis ? `${kpis.transferPct}%` : "—"} />
         <KpiCard icon={XCircle} label="Missed" value={kpis?.missed ?? "—"} />
         <KpiCard icon={Phone} label="Avg Handle Time" value={kpis ? fmtDuration(kpis.avgHandleTimeSec) : "—"} />
       </div>
+          )}
 
       <div className="px-4 sm:px-6 py-5 space-y-5">
+        {activeSection === "support" && (
         <section className="rounded-lg border border-[#E2E8F0] bg-[#FFFFFF] overflow-hidden">
           <div className="px-4 py-3 border-b border-[#E2E8F0] flex items-center justify-between gap-3">
             <div>
@@ -751,9 +810,27 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
             })}
           </div>
         </section>
+        )}
 
+        {activeSection === "calls" && (
+        <section className="space-y-5">
+        {engine.incoming && (
+          <div className="flex items-center gap-3 rounded-md border border-[#F5A623]/40 bg-[#FFF7E8] px-4 py-3 text-xs text-[#92400E]">
+            <span className="h-2.5 w-2.5 animate-ping rounded-full bg-[#E5484D]" />
+            <div className="flex-1">
+              <div className="font-semibold">Incoming call from {engine.incoming.customerName}</div>
+              <div className="mt-0.5">
+                {topic || "Passenger assistance"}{pnr && ` · PNR ${pnr}`}
+              </div>
+            </div>
+            <span className="font-semibold uppercase">{engine.incoming.kind === "transfer" ? "Transferred call" : "New call"}</span>
+          </div>
+        )}
         <ExecutiveLiveCallPanel engine={engine} token={token} />
+        </section>
+        )}
 
+        {activeSection === "customers" && (
         <div className="rounded-lg border border-[#E2E8F0] bg-[#FFFFFF] p-4 space-y-3">
           <div className="text-xs font-medium uppercase tracking-wider text-[#64748B]">Customer Lookup</div>
           <form onSubmit={runLookup} className="flex gap-2">
@@ -785,12 +862,13 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
             <div className="text-[11px] text-[#64748B]">No matching customer found.</div>
           )}
         </div>
+        )}
 
-        {canAct && (
+        {activeSection === "calls" && hasCall && (
           <div className="rounded-lg border border-[#E2E8F0] bg-[#FFFFFF] p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div className="text-sm">
-                Active call — <span className="text-[#0284C7]">{passengerName}</span>
+                {canAct ? "Active call" : "Incoming call"} — <span className="text-[#0284C7]">{passengerName}</span>
               </div>
               <div className="flex gap-3 text-[11px] text-[#64748B]">
                 {topic && <span className="flex items-center gap-1"><Tag size={11} /> {topic}</span>}
@@ -816,11 +894,12 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
                 placeholder="Add a note to this call…"
                 className="flex-1 bg-[#FFFFFF] border border-[#E2E8F0] rounded-md px-3 py-2 text-xs placeholder:text-[#64748B] focus:outline-none"
               />
-              <ActionButton icon={StickyNote} label="Add" onClick={handleAddNote} />
+              <ActionButton icon={StickyNote} label="Add" onClick={handleAddNote} disabled={!canAct} />
             </div>
           </div>
         )}
 
+        {activeSection === "history" && (
         <div className="rounded-lg border border-[#E2E8F0] bg-[#FFFFFF] overflow-hidden">
           <div className="px-4 py-3 border-b border-[#E2E8F0] flex items-center justify-between">
             <span className="text-xs font-medium uppercase tracking-wider text-[#64748B]">Call History (real data)</span>
@@ -883,6 +962,9 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
             </div>
           )}
         </div>
+        )}
+      </div>
+        </main>
       </div>
 
       {detailModal && (
