@@ -4,20 +4,18 @@ import { Train } from "lucide-react";
 
 /**
  * Minimal login screen against the real /api/v1/auth/login endpoint.
- * Demo users (created by `npm run seed` on the server):
- *   admin / supervisor / priya / karan   — all password: password123
+ * Demo users are created by `npm run seed` on the server.
  */
 export default function LoginGate({ onLoggedIn }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [selectedRole, setSelectedRole] = useState("");
+  const [selectedUsername, setSelectedUsername] = useState("");
 
-  function selectRole(role, accountUsername) {
-    setSelectedRole(role);
+  function selectAccount(accountUsername) {
+    setSelectedUsername(accountUsername);
     setUsername(accountUsername);
-    setPassword("");
     setError(null);
   }
 
@@ -44,25 +42,30 @@ export default function LoginGate({ onLoggedIn }) {
         </div>
 
         <div>
-          <div className="text-xs text-[#64748B] mb-1.5">Choose a staff role</div>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="text-xs text-[#64748B] mb-1.5">Choose a demo username</div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {[
-              { role: "executive", username: "priya", label: "Executive" },
-              { role: "supervisor", username: "supervisor", label: "Supervisor" },
-              { role: "admin", username: "admin", label: "Admin" },
+              { username: "priya", role: "Executive" },
+              { username: "karan", role: "Executive" },
+              { username: "farah", role: "Executive" },
+              { username: "vikas", role: "Executive" },
+              { username: "sneha", role: "Executive" },
+              { username: "supervisor", role: "Supervisor" },
+              { username: "admin", role: "Admin" },
             ].map((account) => (
               <button
-                key={account.role}
+                key={account.username}
                 type="button"
-                onClick={() => selectRole(account.role, account.username)}
-                aria-pressed={selectedRole === account.role}
-                className={`rounded-md border px-2 py-2 text-xs font-medium transition-colors ${
-                  selectedRole === account.role
+                onClick={() => selectAccount(account.username)}
+                aria-pressed={selectedUsername === account.username}
+                className={`rounded-md border px-2 py-2 text-left transition-colors ${
+                  selectedUsername === account.username
                     ? "border-[#0284C7] bg-[#0284C7]/10 text-[#0369A1]"
                     : "border-[#E2E8F0] bg-white text-[#475569] hover:bg-[#F8FAFC]"
                 }`}
               >
-                {account.label}
+                <span className="block text-xs font-medium">{account.username}</span>
+                <span className="block text-[10px] opacity-70">{account.role}</span>
               </button>
             ))}
           </div>
@@ -103,7 +106,7 @@ export default function LoginGate({ onLoggedIn }) {
         </button>
 
         <div className="text-[11px] text-[#64748B] text-center">
-          Select a role to fill its demo username, then enter your staff password.
+          Select a username, then enter your staff password.
         </div>
         <a href="#/" className="block text-[11px] text-[#64748B] hover:text-[#64748B] text-center underline underline-offset-2">← Back to home</a>
       </form>
