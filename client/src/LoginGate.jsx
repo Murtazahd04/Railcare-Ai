@@ -8,10 +8,18 @@ import { Train } from "lucide-react";
  *   admin / supervisor / priya / karan   — all password: password123
  */
 export default function LoginGate({ onLoggedIn }) {
-  const [username, setUsername] = useState("priya");
-  const [password, setPassword] = useState("password123");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [selectedRole, setSelectedRole] = useState("");
+
+  function selectRole(role, accountUsername) {
+    setSelectedRole(role);
+    setUsername(accountUsername);
+    setPassword("");
+    setError(null);
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -36,10 +44,36 @@ export default function LoginGate({ onLoggedIn }) {
         </div>
 
         <div>
+          <div className="text-xs text-[#64748B] mb-1.5">Choose a staff role</div>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { role: "executive", username: "priya", label: "Executive" },
+              { role: "supervisor", username: "supervisor", label: "Supervisor" },
+              { role: "admin", username: "admin", label: "Admin" },
+            ].map((account) => (
+              <button
+                key={account.role}
+                type="button"
+                onClick={() => selectRole(account.role, account.username)}
+                aria-pressed={selectedRole === account.role}
+                className={`rounded-md border px-2 py-2 text-xs font-medium transition-colors ${
+                  selectedRole === account.role
+                    ? "border-[#0284C7] bg-[#0284C7]/10 text-[#0369A1]"
+                    : "border-[#E2E8F0] bg-white text-[#475569] hover:bg-[#F8FAFC]"
+                }`}
+              >
+                {account.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
           <label className="text-xs text-[#64748B]">Username</label>
           <input
             value={username}
             onChange={(e) => setUsername(e.target.value)}
+            autoComplete="username"
             className="w-full mt-1 bg-[#FFFFFF] border border-[#E2E8F0] rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#3B82C4]/50"
           />
         </div>
@@ -49,6 +83,7 @@ export default function LoginGate({ onLoggedIn }) {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
             className="w-full mt-1 bg-[#FFFFFF] border border-[#E2E8F0] rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#3B82C4]/50"
           />
         </div>
@@ -68,7 +103,7 @@ export default function LoginGate({ onLoggedIn }) {
         </button>
 
         <div className="text-[11px] text-[#64748B] text-center">
-          Demo accounts: admin · supervisor · priya · karan · farah · vikas · sneha — password: password123
+          Select a role to fill its demo username, then enter your staff password.
         </div>
         <a href="#/" className="block text-[11px] text-[#64748B] hover:text-[#64748B] text-center underline underline-offset-2">← Back to home</a>
       </form>
