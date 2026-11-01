@@ -83,13 +83,15 @@ function classifyLocal(utterance, intents) {
  * null on any failure (service not running, timeout, bad response) so the
  * caller can fall back — this never throws.
  */
-async function tryRemoteClassify(utterance, intents) {
+async function tryRemoteClassify(utterance, intents, { strict = false, timeoutOverrideMs } = {}) {
   const baseUrl = process.env.AI_SERVICE_URL || "http://localhost:8001";
   const controller = new AbortController();
   const configuredTimeout = Number(process.env.AI_CLASSIFY_TIMEOUT_MS);
-  const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout >= 1000 && configuredTimeout <= 30000
-    ? configuredTimeout
-    : 8000;
+  const timeoutMs = timeoutOverrideMs || (
+    Number.isFinite(configuredTimeout) && configuredTimeout >= 1000 && configuredTimeout <= 30000
+      ? configuredTimeout
+      : 8000
+  );
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
@@ -113,6 +115,9 @@ async function tryRemoteClassify(utterance, intents) {
       }),
     });
     if (!res.ok) {
+      if (strict) {
+        throw new Error(`Python AI service returned HTTP ${res.status}. Check its deployment and AI_SERVICE_TOKEN configuration.`);
+      }
       console.warn(`[classifier] Python AI service returned HTTP ${res.status}; using local classifier.`);
       return null;
     }
@@ -127,8 +132,14 @@ async function tryRemoteClassify(utterance, intents) {
     };
   } catch (err) {
     if (err.name === "AbortError") {
+      if (strict) {
+        throw new Error(`Python AI service timed out after ${timeoutMs}ms. It may be waking from sleep; retry after opening its /health URL.`);
+      }
       console.warn(`[classifier] Python AI service timed out after ${timeoutMs}ms; using local classifier.`);
     } else {
+      if (strict) {
+        throw new Error(`Python AI service request failed: ${err.message}`);
+      }
       console.warn("[classifier] Python AI service unavailable; using local classifier:", err.message);
     }
     return null; silently
@@ -144,7 +155,14 @@ async function tryRemoteClassify(utterance, intents) {
  * the local lexical scorer automatically. Nothing calling this needs to
  * know or care which one actually answered.
  */
-async function classify(utterance, intents) {
+async function classify(utterance, intents, { mode = "auto", timeoutMs } = {}) {
+  if (mode === "node") return classifyLocal(utterance, intents);
+
+  if (mode === "python") {
+    const remote = await tryRemoteClassify(utterance, intents, { strict: true, timeoutOverrideMs: timeoutMs });
+    return remote;
+  }
+
   const remote = await tryRemoteClassify(utterance, intents);
   if (remote) return remote;
   return classifyLocal(utterance, intents);

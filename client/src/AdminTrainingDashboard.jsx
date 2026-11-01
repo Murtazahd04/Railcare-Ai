@@ -874,6 +874,7 @@ function ChipSection({ label, items, draft, setDraft, onAdd, placeholder }) {
 // ---------------------------------------------------------------------------
 function LiveTester({ token }) {
   const [utterance, setUtterance] = useState("");
+  const [mode, setMode] = useState("auto");
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -889,9 +890,10 @@ function LiveTester({ token }) {
   async function runTest(e) {
     e.preventDefault();
     setLoading(true);
+    setResult(null);
     setError(null);
     try {
-      const data = await api("/kb/test", token, { method: "POST", body: JSON.stringify({ utterance }) });
+      const data = await api("/kb/test", token, { method: "POST", body: JSON.stringify({ utterance, mode }) });
       setResult(data);
     } catch (err) {
       setError(err.message);
@@ -905,14 +907,27 @@ function LiveTester({ token }) {
       <div className="flex items-center gap-2 text-sm font-medium mb-3">
         <PlayCircle size={15} className="text-[#2FBF71]" /> Try it — test the live classifier
       </div>
-      <form onSubmit={runTest} className="flex gap-2 mb-3">
+      <p className="text-[11px] text-[#64748B] mb-3">
+        Select a classifier for this test only. Auto uses Python when available and otherwise falls back to Node.js.
+      </p>
+      <form onSubmit={runTest} className="flex flex-col sm:flex-row gap-2 mb-3">
         <input
           value={utterance}
           onChange={(e) => setUtterance(e.target.value)}
           placeholder="Type what a passenger might say…"
           className="flex-1 bg-[#FFFFFF] border border-[#E2E8F0] rounded-md px-3 py-2 text-sm focus:outline-none"
         />
-        <button disabled={loading} className="px-4 py-2 rounded-md bg-[#2FBF71]/15 border border-[#2FBF71]/40 text-[#2FBF71] text-xs font-medium hover:bg-[#2FBF71]/25 disabled:opacity-50 flex items-center gap-1.5">
+        <select
+          value={mode}
+          onChange={(event) => setMode(event.target.value)}
+          className="bg-white border border-[#E2E8F0] rounded-md px-3 py-2 text-xs text-[#334155]"
+          aria-label="Classifier mode"
+        >
+          <option value="auto">Auto (Python, then Node fallback)</option>
+          <option value="python">Python only (90s timeout)</option>
+          <option value="node">Node.js only</option>
+        </select>
+        <button disabled={loading || !utterance.trim()} className="px-4 py-2 rounded-md bg-[#2FBF71]/15 border border-[#2FBF71]/40 text-[#2FBF71] text-xs font-medium hover:bg-[#2FBF71]/25 disabled:opacity-50 flex items-center gap-1.5">
           {loading ? <Loader2 size={13} className="animate-spin" /> : <PlayCircle size={13} />} Test
         </button>
       </form>

@@ -2,7 +2,7 @@ const express = require("express");
 const KbCategory = require("../models/KbCategory");
 const KbIntent = require("../models/KbIntent");
 const UnansweredQuery = require("../models/UnansweredQuery");
-const { requireAuth } = require("../middleware/auth");
+const { requireAuth, requireRole } = require("../middleware/auth");
 const { classify } = require("../utils/classifier");
 const { validateBody } = require("../middleware/validate");
 const { kbIntentCreateSchema } = require("../utils/schemas");
@@ -97,26 +97,41 @@ router.post("/intents/:id/keywords", requireAuth, async (req, res) => {
 });
 
 // ---- the "Try it" tester — same code path the live AI would use ----
-router.post("/test", requireAuth, async (req, res) => {
-  const { utterance } = req.body;
-  if (!utterance) return res.status(400).json({ error: "utterance is required" });
+router.post(
+  "/test",
+  requireAuth,
+  requireRole("admin", "super_admin"),
+  validateBody(z.object({
+    utterance: z.string().trim().min(1).max(2000),
+    mode: z.enum(["auto", "node", "python"]).default("auto"),
+  })),
+  async (req, res) => {
+    const { utterance, mode } = req.body;
+    const intents = await KbIntent.find();
+    let result;
+    try {
+      result = await classify(utterance, intents, {
+        mode,
+        timeoutMs: mode === "python" ? 90000 : undefined,
+      });
+    } catch (err) {
+      return res.status(503).json({ error: err.message, source: "python-unavailable" });
+    }
 
-  const intents = await KbIntent.find();
-  const result = await classify(utterance, intents);
+    const belowThreshold = !result.intent || result.confidence < (result.intent?.confidenceThreshold ?? 0.7);
 
-  const belowThreshold = !result.intent || result.confidence < (result.intent?.confidenceThreshold ?? 0.7);
-
-  res.json({
-    utterance,
-    matchedIntent: result.intent ? result.intent.name : null,
-    confidence: result.confidence,
-    action: belowThreshold ? "transfer_to_executive" : result.intent?.expectedAction,
-    reply: belowThreshold ? null : result.intent?.expectedAnswer,
-    thresholdMet: !belowThreshold,
-    ranked: result.ranked,
-    source: result.source,
-  });
-});
+    res.json({
+      utterance,
+      matchedIntent: result.intent ? result.intent.name : null,
+      confidence: result.confidence,
+      action: belowThreshold ? "transfer_to_executive" : result.intent?.expectedAction,
+      reply: belowThreshold ? null : result.intent?.expectedAnswer,
+      thresholdMet: !belowThreshold,
+      ranked: result.ranked,
+      source: result.source,
+    });
+  }
+);
 
 // public (no-auth) version for the customer-facing AI simulator, if you build one
 router.post("/test-public", async (req, res) => {
