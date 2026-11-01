@@ -414,6 +414,7 @@ export default function AdminTrainingDashboard({ user, token, onLogout }) {
         />
       ) : (
       <>
+      <PassengerClassifierSettings token={token} />
       <div className="grid grid-cols-1 lg:grid-cols-[220px_260px_1fr] gap-0 min-h-[calc(100vh-65px)]">
         {/* categories */}
         <div className="border-r border-[#E2E8F0] p-3 space-y-1">
@@ -878,13 +879,16 @@ function LiveTester({ token }) {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const isPythonSource = ["fastembed-english", "fastembed-multilingual"].includes(result?.source);
+  const isPythonSource = ["fastembed-english", "fastembed-multilingual", "dual"].includes(result?.source);
+  const isDualSource = result?.source === "dual";
   const classifierLabel = result?.source === "fastembed-english"
     ? "Python English embeddings"
     : result?.source === "fastembed-multilingual"
       ? "Python embeddings (legacy API label)"
       : result?.source === "local-lexical"
         ? "Node.js lexical classifier"
+        : isDualSource
+          ? "Dual comparison (Python result used)"
         : result?.source
           ? `Unrecognized source: ${result.source}`
           : "API did not report classifier source";
@@ -931,6 +935,7 @@ function LiveTester({ token }) {
           <option value="auto">Auto (Python, then Node fallback)</option>
           <option value="python">Python only (90s timeout)</option>
           <option value="node">Node.js only</option>
+          <option value="dual">Dual comparison (Python answers)</option>
         </select>
         <button disabled={loading || !utterance.trim()} className="px-4 py-2 rounded-md bg-[#2FBF71]/15 border border-[#2FBF71]/40 text-[#2FBF71] text-xs font-medium hover:bg-[#2FBF71]/25 disabled:opacity-50 flex items-center gap-1.5">
           {loading ? <Loader2 size={13} className="animate-spin" /> : <PlayCircle size={13} />} Test
@@ -955,7 +960,7 @@ function LiveTester({ token }) {
               This API response omitted its source field. Redeploy the Node API so the tester can identify which classifier handled the query.
             </div>
           )}
-          {result.source && !["fastembed-english", "fastembed-multilingual", "local-lexical"].includes(result.source) && (
+          {result.source && !["fastembed-english", "fastembed-multilingual", "local-lexical", "dual"].includes(result.source) && (
             <div className="text-[11px] text-[#64748B]">
               The API returned an unrecognized source identifier. Check the deployed Node API version.
             </div>
@@ -964,6 +969,22 @@ function LiveTester({ token }) {
             <div className="flex items-center justify-between text-[10px] text-[#64748B]">
               <span>API source identifier</span>
               <span className="font-mono">{result.source}</span>
+            </div>
+          )}
+          {result.comparison && (
+            <div className="rounded-md border border-[#E2E8F0] p-2.5 space-y-1.5">
+              <div className="font-medium text-[#334155]">Classifier comparison</div>
+              <div className="flex justify-between gap-3">
+                <span>Python</span>
+                <span>{result.comparison.python.matchedIntent || "no match"} · {(result.comparison.python.confidence * 100).toFixed(1)}%</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span>Node.js</span>
+                <span>{result.comparison.node.matchedIntent || "no match"} · {(result.comparison.node.confidence * 100).toFixed(1)}%</span>
+              </div>
+              <div className="text-[10px] text-[#64748B]">
+                {result.comparison.agreement ? "Both classifiers selected the same intent." : "Classifiers disagreed; the Python result is used for the passenger."}
+              </div>
             </div>
           )}
           <div className="flex items-center justify-between">
@@ -984,6 +1005,85 @@ function LiveTester({ token }) {
         </div>
       )}
     </div>
+  );
+}
+
+function PassengerClassifierSettings({ token }) {
+  const [mode, setMode] = useState("auto");
+  const [savedMode, setSavedMode] = useState("auto");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    api("/kb/classifier-mode", token)
+      .then(({ mode: currentMode }) => {
+        if (!active) return;
+        setMode(currentMode);
+        setSavedMode(currentMode);
+      })
+      .catch((err) => active && setError(err.message))
+      .finally(() => active && setLoading(false));
+    return () => { active = false; };
+  }, [token]);
+
+  async function saveMode() {
+    setSaving(true);
+    setError(null);
+    try {
+      const { mode: updatedMode } = await api("/kb/classifier-mode", token, {
+        method: "PUT",
+        body: JSON.stringify({ mode }),
+      });
+      setMode(updatedMode);
+      setSavedMode(updatedMode);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="mx-4 mt-4 rounded-lg border border-[#BBF7D0] bg-gradient-to-br from-white via-[#F0FDF4] to-[#DCFCE7] p-4 sm:mx-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-sm font-semibold text-[#14532D]">Passenger query classifier</h2>
+          <p className="mt-1 text-[11px] text-[#475569]">
+            Select which classifier handles passenger chat questions. Dual runs both and uses Python's result; Python-only and Dual do not fall back if Python is unavailable.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={mode}
+            onChange={(event) => setMode(event.target.value)}
+            disabled={loading || saving}
+            className="rounded-md border border-[#CBD5E1] bg-white px-3 py-2 text-xs text-[#334155]"
+            aria-label="Passenger query classifier"
+          >
+            <option value="auto">Auto (current behavior)</option>
+            <option value="python">Python only</option>
+            <option value="node">Node.js only</option>
+            <option value="dual">Dual comparison (Python answers)</option>
+          </select>
+          <button
+            type="button"
+            onClick={saveMode}
+            disabled={loading || saving || mode === savedMode}
+            className="rounded-md border border-[#16A34A]/30 bg-[#16A34A]/10 px-3 py-2 text-xs font-medium text-[#166534] hover:bg-[#16A34A]/20 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {saving ? "Saving…" : loading ? "Loading…" : "Save"}
+          </button>
+        </div>
+      </div>
+      {error && <div role="alert" className="mt-2 text-xs text-[#B42318]">{error}</div>}
+      {!loading && !error && (
+        <div className="mt-2 text-[10px] text-[#64748B]">
+          Active for passenger chat: <span className="font-semibold">{savedMode === "node" ? "Node.js only" : savedMode === "python" ? "Python only" : savedMode === "dual" ? "Dual comparison" : "Auto"}</span>
+        </div>
+      )}
+    </section>
   );
 }
 

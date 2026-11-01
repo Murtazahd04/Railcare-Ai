@@ -126,7 +126,13 @@ async function aiQuery(utterance, rejectedIntentIds = []) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ utterance, rejectedIntentIds }),
   });
-  return res.json();
+  const data = await res.json();
+  if (!res.ok) {
+    const error = new Error(data.error || "Passenger query could not be classified.");
+    error.source = data.source;
+    throw error;
+  }
+  return data;
 }
 
 async function aiQueryConfirm(intentId, pnr) {
@@ -250,7 +256,6 @@ export default function PassengerPortal() {
   // Separate from engine.status so the bar survives transient idle transitions.
   const [callIsActive, setCallIsActive] = useState(false);
   const lastResultRef = useRef(null);
-  const [classifierSource, setClassifierSource] = useState(null);
 
   // Sync speaker toggle with remote audio element
   useEffect(() => {
@@ -429,8 +434,8 @@ export default function PassengerPortal() {
     resetChat();
   }
 
-  function pushTranscript(speaker, text) {
-    transcriptRef.current = [...transcriptRef.current, { speaker, text }];
+  function pushTranscript(speaker, text, metadata = {}) {
+    transcriptRef.current = [...transcriptRef.current, { speaker, text, ...metadata }];
     setTranscript(transcriptRef.current);
   }
 
@@ -444,7 +449,6 @@ export default function PassengerPortal() {
     setVoiceError(null);
     setCallRating(null);
     lastResultRef.current = null;
-    setClassifierSource(null);
     setAiPhase("idle");
   }
 
@@ -546,24 +550,33 @@ export default function PassengerPortal() {
     setAiPhase("thinking");
     setRelatedQuestions([]);
     setClarifyOptions(null);
-    const result = await aiQuery(text, rejectedIntentIds);
+    let result;
+    try {
+      result = await aiQuery(text, rejectedIntentIds);
+    } catch (err) {
+      pushTranscript("ai", `I couldn't process that query: ${err.message} Please try again shortly.`, {
+        classifierSource: err.source || "unknown",
+      });
+      setAiPhase("idle");
+      return;
+    }
     lastResultRef.current = result;
-    setClassifierSource(result.source || null);
+    const classifierSource = result.source || "unknown";
 
     if (result.status === "confirm") {
       setPendingConfirm({ id: result.candidateIntentId, name: result.candidateIntentName, utterance: text, rejected: rejectedIntentIds });
-      pushTranscript("ai", result.confirmPrompt);
+      pushTranscript("ai", result.confirmPrompt, { classifierSource });
       setAiPhase("confirming");
       await speak(result.confirmPrompt);
     } else if (result.status === "clarify") {
       setClarifyOptions({ options: result.options, utterance: text, rejected: rejectedIntentIds });
       const prompt = "I'm not fully sure, but did you mean one of these?";
-      pushTranscript("ai", prompt);
+      pushTranscript("ai", prompt, { classifierSource });
       setAiPhase("clarifying");
       await speak(prompt);
     } else {
       const msg = "I couldn't find an exact match in our knowledge base.";
-      pushTranscript("ai", msg);
+      pushTranscript("ai", msg, { classifierSource });
       setAiPhase("unresolved-choice");
       await speak(msg + " Would you like to end the chat, or talk to an executive?");
     }
@@ -1573,25 +1586,6 @@ export default function PassengerPortal() {
                       {session?.user?.name ? `${session.user.name} · ` : ""}PNR: {activeBooking?.pnr || session?.user?.pnr || "—"}
                     </span>
                   </div>
-                  {classifierSource && (
-                    <div className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[10px] font-semibold ${
-                      ["fastembed-english", "fastembed-multilingual"].includes(classifierSource)
-                        ? "border-[#10B981]/30 bg-[#10B981]/10 text-[#059669]"
-                        : "border-[#F59E0B]/30 bg-[#F59E0B]/10 text-[#B45309]"
-                    }`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${
-                        ["fastembed-english", "fastembed-multilingual"].includes(classifierSource) ? "bg-[#10B981]" : "bg-[#F59E0B]"
-                      }`} />
-                      {classifierSource === "fastembed-english"
-                        ? "Python English AI embeddings handled this query"
-                        : classifierSource === "fastembed-multilingual"
-                          ? "Python AI embeddings handled this query (older API label)"
-                        : classifierSource === "local-lexical"
-                          ? "Node.js lexical classifier handled this query"
-                          : `Unrecognized classifier source: ${classifierSource}`}
-                    </div>
-                  )}
-
                   {/* Chat bubbles */}
                   {transcript.map((msg, i) => (
                     <div
@@ -1616,6 +1610,25 @@ export default function PassengerPortal() {
                           {msg.speaker === "ai" ? "RailCare AI" : "You"}
                         </div>
                         {msg.text}
+                        {msg.classifierSource && (
+                          <div className={`mt-2 text-[10px] font-semibold ${
+                            ["fastembed-english", "fastembed-multilingual", "dual"].includes(msg.classifierSource)
+                              ? "text-[#059669] dark:text-[#34D399]"
+                              : "text-[#B45309] dark:text-[#FBBF24]"
+                          }`}>
+                            {msg.classifierSource === "fastembed-english"
+                              ? "Python English AI embeddings"
+                              : msg.classifierSource === "fastembed-multilingual"
+                                ? "Python AI embeddings (older API label)"
+                                : msg.classifierSource === "dual"
+                                  ? "Dual comparison (Python result used)"
+                                : msg.classifierSource === "local-lexical"
+                                  ? "Node.js lexical classifier"
+                                  : msg.classifierSource === "python-unavailable"
+                                    ? "Python classifier unavailable"
+                                  : `Classifier source not reported${msg.classifierSource !== "unknown" ? ` (${msg.classifierSource})` : ""}`}
+                          </div>
+                        )}
                       </div>
                       {msg.speaker !== "ai" && (
                         <div className="w-8 h-8 rounded-full bg-[#004B87]/15 border border-[#004B87]/30 text-[#004B87] dark:text-[#38BDF8] flex items-center justify-center shrink-0 mt-0.5">

@@ -189,6 +189,28 @@ async function classify(utterance, intents, { mode = "auto", timeoutMs } = {}) {
     return remote;
   }
 
+  if (mode === "dual") {
+    const [pythonResult, nodeResult] = await Promise.all([
+      tryRemoteClassify(utterance, intents, { strict: true, timeoutOverrideMs: timeoutMs }),
+      Promise.resolve(classifyLocal(utterance, intents)),
+    ]);
+    return {
+      ...pythonResult,
+      source: "dual",
+      comparison: {
+        python: {
+          matchedIntent: pythonResult.intent?.name || null,
+          confidence: pythonResult.confidence,
+        },
+        node: {
+          matchedIntent: nodeResult.intent?.name || null,
+          confidence: nodeResult.confidence,
+        },
+        agreement: pythonResult.intent?.name === nodeResult.intent?.name,
+      },
+    };
+  }
+
   if (containsHindiOrHinglish(utterance)) return classifyLocal(utterance, intents);
 
   const remote = await tryRemoteClassify(utterance, intents);

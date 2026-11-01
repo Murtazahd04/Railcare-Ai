@@ -2,6 +2,7 @@ const express = require("express");
 const KbCategory = require("../models/KbCategory");
 const KbIntent = require("../models/KbIntent");
 const UnansweredQuery = require("../models/UnansweredQuery");
+const ClassifierConfig = require("../models/ClassifierConfig");
 const { requireAuth, requireRole } = require("../middleware/auth");
 const { classify } = require("../utils/classifier");
 const { validateBody } = require("../middleware/validate");
@@ -9,6 +10,26 @@ const { kbIntentCreateSchema } = require("../utils/schemas");
 const { z } = require("zod");
 
 const router = express.Router();
+
+router.get("/classifier-mode", requireAuth, requireRole("admin", "super_admin"), async (_req, res) => {
+  const config = await ClassifierConfig.findOne({ key: "passenger" }).lean();
+  res.json({ mode: config?.passengerMode || "auto" });
+});
+
+router.put(
+  "/classifier-mode",
+  requireAuth,
+  requireRole("admin", "super_admin"),
+  validateBody(z.object({ mode: z.enum(["auto", "python", "node", "dual"]) })),
+  async (req, res) => {
+    const config = await ClassifierConfig.findOneAndUpdate(
+      { key: "passenger" },
+      { $set: { passengerMode: req.body.mode } },
+      { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
+    ).lean();
+    res.json({ mode: config.passengerMode });
+  }
+);
 
 // ---- Unanswered queries — the AI's real "I don't know" list ----
 // Unreviewed first, most-repeated first, so the training team sees the
@@ -103,7 +124,7 @@ router.post(
   requireRole("admin", "super_admin"),
   validateBody(z.object({
     utterance: z.string().trim().min(1).max(2000),
-    mode: z.enum(["auto", "node", "python"]).default("auto"),
+    mode: z.enum(["auto", "node", "python", "dual"]).default("auto"),
   })),
   async (req, res) => {
     const { utterance, mode } = req.body;
@@ -112,7 +133,7 @@ router.post(
     try {
       result = await classify(utterance, intents, {
         mode,
-        timeoutMs: mode === "python" ? 90000 : undefined,
+        timeoutMs: mode === "python" || mode === "dual" ? 90000 : undefined,
       });
     } catch (err) {
       return res.status(503).json({ error: err.message, source: "python-unavailable" });
@@ -129,6 +150,7 @@ router.post(
       thresholdMet: !belowThreshold,
       ranked: result.ranked,
       source: result.source,
+      comparison: result.comparison,
     });
   }
 );

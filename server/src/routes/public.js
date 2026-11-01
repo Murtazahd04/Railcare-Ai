@@ -8,6 +8,7 @@ const KbIntent = require("../models/KbIntent");
 const KbCategory = require("../models/KbCategory");
 const Call = require("../models/Call"); // was missing — /ai-session/close referenced Call.create() and crashed with "Call is not defined"
 const UnansweredQuery = require("../models/UnansweredQuery");
+const ClassifierConfig = require("../models/ClassifierConfig");
 const { classify } = require("../utils/classifier");
 const { sendWhatsAppMessage } = require("../utils/whatsapp");
 const { sendEmail } = require("../utils/email");
@@ -183,7 +184,17 @@ router.post("/ai-query", validateBody(aiQuerySchema), async (req, res) => {
   const rejected = new Set(req.body.rejectedIntentIds || []);
   const candidatePool = intents.filter((i) => !rejected.has(String(i._id)));
 
-  const result = await classify(req.body.utterance, candidatePool);
+  const classifierConfig = await ClassifierConfig.findOne({ key: "passenger" }).lean();
+  const mode = classifierConfig?.passengerMode || "auto";
+  let result;
+  try {
+    result = await classify(req.body.utterance, candidatePool, {
+      mode,
+      timeoutMs: mode === "python" || mode === "dual" ? 90000 : undefined,
+    });
+  } catch (err) {
+    return res.status(503).json({ error: err.message, source: "python-unavailable" });
+  }
   const belowThreshold = !result.intent || result.confidence < (result.intent?.confidenceThreshold ?? 0.7);
 
   if (belowThreshold) {
