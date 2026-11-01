@@ -38,7 +38,7 @@ function KpiCard({ icon: Icon, label, value, sub }) {
     <motion.div
       whileHover={{ y: -3, boxShadow: "0 8px 20px -6px rgba(0,61,165,0.15)" }}
       transition={{ duration: 0.18 }}
-      className="flex-1 min-w-[150px] rounded-lg bg-[#FFFFFF] border border-[#E2E8F0] p-4"
+      className="flex-1 min-w-[150px] rounded-lg bg-gradient-to-br from-white via-[#F0FDF4] to-[#DCFCE7] border border-[#BBF7D0] p-4"
     >
       <div className="flex items-center justify-between mb-2">
         <span className="text-[11px] uppercase tracking-wider text-[#64748B] font-medium">{label}</span>
@@ -681,7 +681,7 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
 
       <div className="px-4 sm:px-6 py-5 space-y-5">
         {activeSection === "support" && (
-        <section className="rounded-lg border border-[#E2E8F0] bg-[#FFFFFF] overflow-hidden">
+        <section className="rounded-lg border border-[#BBF7D0] bg-gradient-to-br from-white via-[#F0FDF4] to-[#DCFCE7] overflow-hidden">
           <div className="px-4 py-3 border-b border-[#E2E8F0] flex items-center justify-between gap-3">
             <div>
               <div className="text-xs font-medium uppercase tracking-wider text-[#0F172A]">Passenger Support Queue</div>
@@ -710,7 +710,7 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
                   className={`min-h-56 rounded-md border p-2 transition-colors ${
                     dragOverSupportStatus === statusColumn.value
                       ? "border-[#0284C7] bg-[#EFF6FF]"
-                      : "border-[#E2E8F0] bg-[#F8FAFC]"
+                      : "border-[#BBF7D0] bg-gradient-to-br from-white via-[#F0FDF4] to-[#DCFCE7]"
                   }`}
                 >
                   <header className="mb-2 flex items-center justify-between px-1 py-1">
@@ -732,7 +732,7 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
                           draggable={!saving}
                           onDragStart={(event) => handleSupportDragStart(event, key)}
                           onDragEnd={() => { setDraggingSupportCase(null); setDragOverSupportStatus(null); }}
-                          className={`rounded-md border border-[#E2E8F0] bg-white p-3 space-y-2.5 shadow-sm ${
+                          className={`rounded-md border border-[#BBF7D0] bg-gradient-to-br from-white via-[#F0FDF4] to-[#DCFCE7] p-3 space-y-2.5 shadow-sm ${
                             saving ? "opacity-60" : "cursor-grab active:cursor-grabbing"
                           } ${draggingSupportCase === key ? "opacity-40" : ""}`}
                         >
@@ -831,7 +831,7 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
         )}
 
         {activeSection === "customers" && (
-        <div className="rounded-lg border border-[#E2E8F0] bg-[#FFFFFF] p-4 space-y-3">
+        <div className="rounded-lg border border-[#BBF7D0] bg-gradient-to-br from-white via-[#F0FDF4] to-[#DCFCE7] p-4 space-y-3">
           <div className="text-xs font-medium uppercase tracking-wider text-[#64748B]">Customer Lookup</div>
           <form onSubmit={runLookup} className="flex gap-2">
             <input
@@ -865,7 +865,7 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
         )}
 
         {activeSection === "calls" && hasCall && (
-          <div className="rounded-lg border border-[#E2E8F0] bg-[#FFFFFF] p-4 space-y-3">
+          <div className="rounded-lg border border-[#BBF7D0] bg-gradient-to-br from-white via-[#F0FDF4] to-[#DCFCE7] p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div className="text-sm">
                 {canAct ? "Active call" : "Incoming call"} — <span className="text-[#0284C7]">{passengerName}</span>
@@ -900,7 +900,7 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
         )}
 
         {activeSection === "history" && (
-        <div className="rounded-lg border border-[#E2E8F0] bg-[#FFFFFF] overflow-hidden">
+        <div className="rounded-lg border border-[#BBF7D0] bg-gradient-to-br from-white via-[#F0FDF4] to-[#DCFCE7] overflow-hidden">
           <div className="px-4 py-3 border-b border-[#E2E8F0] flex items-center justify-between">
             <span className="text-xs font-medium uppercase tracking-wider text-[#64748B]">Call History (real data)</span>
             <div className="flex items-center gap-2 bg-[#FFFFFF] border border-[#E2E8F0] rounded-md px-2 py-1.5">

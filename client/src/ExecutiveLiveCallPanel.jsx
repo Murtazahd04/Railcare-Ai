@@ -82,7 +82,7 @@ export default function ExecutiveLiveCallPanel({ engine, token }) {
   }, [status, token]);
 
   return (
-    <div className="rounded-lg border border-[#E2E8F0] bg-[#FFFFFF] p-4 space-y-3">
+    <div className="rounded-lg border border-[#BBF7D0] bg-gradient-to-br from-white via-[#F0FDF4] to-[#DCFCE7] p-4 space-y-3">
       <audio ref={remoteAudioRef} autoPlay playsInline />
 
       <div className="flex items-center justify-between">
