@@ -240,6 +240,7 @@ Trial accounts can only call/message **verified** numbers. Note that a sleeping 
 
 ### 9.3 Gmail notifications
 Enable 2-Step Verification → create an App Password → set `EMAIL_USER`, `EMAIL_PASS`, and (optionally) `SOS_ALERT_EMAIL`.
+The backend connects to `smtp.gmail.com` on port `587` using STARTTLS. If Render still cannot establish an SMTP connection, use an email provider with an HTTPS API instead.
 
 ### 9.4 TURN relay (strongly recommended for real voice-call testing)
 WebRTC audio is peer-to-peer. Over STUN only, calls between devices on mobile data or strict Wi-Fi may connect with **no audio**. A free TURN relay fixes this:
