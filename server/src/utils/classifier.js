@@ -116,7 +116,18 @@ async function tryRemoteClassify(utterance, intents, { strict = false, timeoutOv
     });
     if (!res.ok) {
       if (strict) {
-        throw new Error(`Python AI service returned HTTP ${res.status}. Check its deployment and AI_SERVICE_TOKEN configuration.`);
+        const upstreamDetail = (await res.text()).trim().slice(0, 400);
+        let guidance = "Check the Python service logs and deployment.";
+        if (res.status === 401 || res.status === 403) {
+          guidance = "The AI_SERVICE_TOKEN configured on the Node and Python Render services does not match.";
+        } else if (res.status === 502) {
+          guidance = "Render could not get a response from the Python instance. Check its logs for a crash, restart, or memory issue during model loading; this is not a token rejection.";
+        } else if (res.status === 503) {
+          guidance = "The Python service is unavailable or still starting. Check its Render events and logs, then retry after /health is healthy.";
+        }
+        throw new Error(
+          `Python AI service returned HTTP ${res.status}. ${guidance}${upstreamDetail ? ` Upstream: ${upstreamDetail}` : ""}`
+        );
       }
       console.warn(`[classifier] Python AI service returned HTTP ${res.status}; using local classifier.`);
       return null;
