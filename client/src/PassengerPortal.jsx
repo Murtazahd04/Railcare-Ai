@@ -250,6 +250,7 @@ export default function PassengerPortal() {
   // Separate from engine.status so the bar survives transient idle transitions.
   const [callIsActive, setCallIsActive] = useState(false);
   const lastResultRef = useRef(null);
+  const [classifierSource, setClassifierSource] = useState(null);
 
   // Sync speaker toggle with remote audio element
   useEffect(() => {
@@ -443,6 +444,7 @@ export default function PassengerPortal() {
     setVoiceError(null);
     setCallRating(null);
     lastResultRef.current = null;
+    setClassifierSource(null);
     setAiPhase("idle");
   }
 
@@ -546,6 +548,7 @@ export default function PassengerPortal() {
     setClarifyOptions(null);
     const result = await aiQuery(text, rejectedIntentIds);
     lastResultRef.current = result;
+    setClassifierSource(result.source || null);
 
     if (result.status === "confirm") {
       setPendingConfirm({ id: result.candidateIntentId, name: result.candidateIntentName, utterance: text, rejected: rejectedIntentIds });
@@ -1570,6 +1573,22 @@ export default function PassengerPortal() {
                       {session?.user?.name ? `${session.user.name} · ` : ""}PNR: {activeBooking?.pnr || session?.user?.pnr || "—"}
                     </span>
                   </div>
+                  {classifierSource && (
+                    <div className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[10px] font-semibold ${
+                      classifierSource === "fastembed-multilingual"
+                        ? "border-[#10B981]/30 bg-[#10B981]/10 text-[#059669]"
+                        : "border-[#F59E0B]/30 bg-[#F59E0B]/10 text-[#B45309]"
+                    }`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${
+                        classifierSource === "fastembed-multilingual" ? "bg-[#10B981]" : "bg-[#F59E0B]"
+                      }`} />
+                      {classifierSource === "fastembed-multilingual"
+                        ? "Python AI embeddings handled this query"
+                        : classifierSource === "local-lexical"
+                          ? "Node.js fallback handled this query"
+                          : "Classifier source unavailable"}
+                    </div>
+                  )}
 
                   {/* Chat bubbles */}
                   {transcript.map((msg, i) => (

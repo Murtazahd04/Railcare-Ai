@@ -877,6 +877,14 @@ function LiveTester({ token }) {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const classifierLabel = result?.source === "fastembed-multilingual"
+    ? "Python embeddings active"
+    : result?.source === "local-lexical"
+      ? "Node.js lexical fallback"
+      : "Unknown classifier";
+  const classifierTone = result?.source === "fastembed-multilingual"
+    ? "bg-[#2FBF71]/10 border-[#2FBF71]/30 text-[#16854A]"
+    : "bg-[#F5A623]/10 border-[#F5A623]/30 text-[#9A6700]";
 
   async function runTest(e) {
     e.preventDefault();
@@ -913,6 +921,10 @@ function LiveTester({ token }) {
 
       {result && (
         <div className="rounded-md border border-[#E2E8F0] bg-[#FFFFFF] p-3 space-y-2 text-xs">
+          <div className={`flex items-center justify-between rounded-md border px-2.5 py-2 ${classifierTone}`}>
+            <span className="font-medium">Classifier used for this query</span>
+            <span className="font-semibold">{classifierLabel}</span>
+          </div>
           <div className="flex items-center justify-between">
             <span>Matched intent</span>
             <span className={result.matchedIntent ? "text-[#0284C7]" : "text-[#64748B]"}>{result.matchedIntent || "none"}</span>
@@ -924,10 +936,6 @@ function LiveTester({ token }) {
           <div className="flex items-center justify-between">
             <span>Threshold met</span>
             <span className={result.thresholdMet ? "text-[#2FBF71]" : "text-[#F5A623]"}>{result.thresholdMet ? "yes" : "no — would transfer to human"}</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span>Classifier source</span>
-            <span className="font-mono text-[#64748B]">{result.source || "unknown"}</span>
           </div>
           {result.reply && (
             <div className="pt-2 border-t border-[#E2E8F0] text-[#475569]">"{result.reply}"</div>

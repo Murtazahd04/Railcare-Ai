@@ -114,6 +114,7 @@ router.post("/test", requireAuth, async (req, res) => {
     reply: belowThreshold ? null : result.intent?.expectedAnswer,
     thresholdMet: !belowThreshold,
     ranked: result.ranked,
+    source: result.source,
   });
 });
 
@@ -129,6 +130,7 @@ router.post("/test-public", async (req, res) => {
     confidence: result.confidence,
     thresholdMet: !belowThreshold,
     reply: belowThreshold ? null : result.intent?.expectedAnswer,
+    source: result.source,
   });
 });
 
