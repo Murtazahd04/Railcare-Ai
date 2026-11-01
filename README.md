@@ -10,7 +10,7 @@
 **SRLMS (Smart Railway Linen Management System)** is an enterprise-grade railway passenger assistance and supply chain platform built for Indian Railways. It bridges modern AI voice assistance, real-time peer-to-peer browser calling, PSTN telephony, automated grievance redressal, fine collection, and IoT-based linen inventory tracking into a unified ecosystem.
 
 The system is designed with an **"AI-First, Human-Escalated"** philosophy:
-1. **Passengers** interact via voice or text with an AI assistant that understands English, Hindi, and Hinglish queries.
+1. **Passengers** interact via voice or text with an AI assistant that classifies queries against the admin knowledge base. Add and test examples in the languages and scripts passengers actually use, including Hindi and Hinglish.
 2. If the AI confidently resolves the inquiry, the issue is settled without human intervention.
 3. If the query is complex, ambiguous, or flagged as an emergency (e.g., medical issues, theft, harassment, or SOS button activation), the system automatically routes the passenger through a sentiment-weighted priority queue to a live support executive via **browser-to-browser WebRTC voice calling**.
 4. Calls can be recorded, supervisor-monitored in real time, or force-transferred.
@@ -45,7 +45,7 @@ flowchart TB
     subgraph AI_Intelligence["3. AI & SPEECH INTELLIGENCE TIER"]
         direction TB
         PY_FAST["Python FastAPI Microservice (Port 8001)\n(ai-service/main.py)"]
-        ST_EMB["Sentence-Transformers\n(all-MiniLM-L6-v2)\nEmbeddings & Cosine Sim"]
+        ST_EMB["FastEmbed / ONNX Runtime\n(multilingual MiniLM)\nEmbeddings & Cosine Sim"]
         WHISPER["Faster-Whisper (base)\nLocal STT Engine"]
         PIPER["Piper TTS (ONNX)\nNeural Voice Generation"]
         LOCAL_FALLBACK["Node.js Local Fallback Engine\n(Token Jaccard + Keyword Scorer)\nZero-dependency backup"]
@@ -131,7 +131,7 @@ Built with **React 18**, **Vite**, **Tailwind CSS**, **Lucide Icons**, and **Rec
     *   **Force-Transfer**: Moves an active call from one executive to another without either party redialing.
 *   **Admin Training Dashboard (`AdminTrainingDashboard.jsx` / `#/admin`)**:
     *   8-Step Intent Creation Wizard: Category $\rightarrow$ Intent Name $\rightarrow$ Training Questions $\rightarrow$ Synonyms $\rightarrow$ Keywords $\rightarrow$ Action $\rightarrow$ Answer Template $\rightarrow$ Confidence Threshold.
-    *   Live Tester: Simulates utterances against either Sentence-Transformers embeddings or the local lexical classifier.
+    *   Live Tester: Simulates utterances against multilingual FastEmbed embeddings or the local lexical classifier.
     *   Unanswered Query Review Queue: Lists real queries that failed classification thresholds, allowing administrators to convert them into trained intents with one click.
 *   **RFID Lifecycle Console (`RfidLifecycleView.jsx` / `#/rfid`)**:
     *   Visual 7-stage supply chain flow tracking linen kits through Laundry, Store, Transport, Train, Coach, Berth, and Return.
@@ -156,11 +156,11 @@ Built with **Node.js**, **Express**, **Socket.IO**, and **Mongoose**.
     *   Receives mixed dual-channel WebM audio blobs from the executive's browser via `multer.memoryStorage()`.
     *   Streams directly into MongoDB's `recordings` GridFS bucket and provides chunked download/streaming endpoints (`GET /api/v1/calls/:callId/recording`).
 
-### 3.3. Local AI Microservice (`ai-service/`)
-A lightweight, self-hosted Python microservice built with **FastAPI** and **Uvicorn** (`main.py`).
-*   **Embeddings Classifier (`POST /classify`)**: Uses Hugging Face's `sentence-transformers/all-MiniLM-L6-v2` (~80MB). Generates 384-dimensional dense vector embeddings for input utterances and pre-computed training questions/synonyms, calculating cosine similarity via NumPy.
-*   **Speech-to-Text (`POST /stt`)**: Uses `faster-whisper` (OpenAI Whisper optimized via CTranslate2, `base` model in `int8` quantization on CPU) to transcribe multi-format audio uploads.
-*   **Text-to-Speech (`POST /tts`)**: Uses Rhasspy `piper-tts` to synthesize speech using ONNX neural models (`en_US-lessac-medium`), streaming clean WAV audio buffers back.
+### 3.3. AI Microservice (`ai-service/`)
+A Python microservice built with **FastAPI**, **Uvicorn**, and **FastEmbed**.
+*   **Embeddings Classifier (`POST /classify`)**: Uses the multilingual `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` model through FastEmbed/ONNX Runtime. It compares 384-dimensional utterance and knowledge-base embeddings using cosine similarity. The API accepts a shared bearer token in production. Multilingual model support does not guarantee robust transliteration: include real Hindi/Hinglish knowledge-base examples and validate them with labeled passenger queries.
+*   **Render deployment**: The free-tier service installs only the lightweight ONNX classification dependencies and pre-downloads the model at build time. Free instances can sleep when idle; the Node backend falls back to its lexical classifier when the AI service is unavailable or slow.
+*   **Optional local speech endpoints (`POST /stt`, `POST /tts`)**: Install `requirements-local.txt` to enable Faster-Whisper and Piper locally. These larger dependencies are excluded from the Render free-tier deployment; the app falls back to browser speech APIs.
 
 ---
 
@@ -178,11 +178,11 @@ sequenceDiagram
     actor E as Executive (Dashboard)
 
     P->>B: POST /public/ai-query { utterance: "mera kambal nahi mila" }
-    B->>AI: POST /classify (Sentence-Transformers)
+    B->>AI: POST /classify (FastEmbed multilingual embeddings)
     alt AI Microservice Available
         AI-->>B: { matchedIntent: "Missing Blanket", confidence: 0.88 }
     else AI Microservice Offline
-        B->>B: Local Token/Jaccard Classifier Fallback
+        B->>B: Local Token/Keyword Classifier Fallback
         B-->>B: { matchedIntent: "Missing Blanket", confidence: 0.82 }
     end
 
@@ -322,9 +322,9 @@ flowchart TD
 | **Twilio Voice (Outbound Callback)** | Dialing a passenger's actual mobile number when WebRTC lines are busy or an agent triggers a callback. | `server/src/utils/twilioCall.js`, `routes/voice.js` | `TWILIO_EXECUTIVE_FALLBACK_NUMBER` | **Functional (Trial Restricted)** | Inline TwiML requires no public ngrok tunnel. Trial accounts can only dial numbers pre-verified in the Twilio Console. |
 | **Twilio WhatsApp** | Automated passenger notifications for complaint registration, resolution, fines, and escalation. | `server/src/utils/whatsapp.js`, `routes/telephony.js` | `TWILIO_WHATSAPP_FROM`, `TWILIO_WHATSAPP_JOIN_CODE` | **Functional (Sandbox Mode)** | Twilio Sandbox constraint: Recipients must first message the sandbox number once with the join code (e.g., `join twilio-trial`). |
 | **Resend Email API** | Transactional emails for fine payment QR attachments, complaint receipts, and emergency SOS alerts. | `server/src/utils/email.js`, `socket/signaling.js` | `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `SOS_ALERT_EMAIL` | **Configured** | Uses Resend's HTTPS API. `onboarding@resend.dev` is suitable for testing; passenger delivery requires a verified sending domain. |
-| **Sentence-Transformers** | Dense vector semantic embeddings (`all-MiniLM-L6-v2`) for intent matching in Hindi/English/Hinglish. | `ai-service/main.py` | `AI_SERVICE_URL` | **Fully Functional (Self-Hosted)** | Runs locally in Python microservice. If offline, the Node backend automatically falls back to token/Jaccard scoring. |
-| **Faster-Whisper** | High-accuracy local speech-to-text on uploaded audio recordings. | `ai-service/main.py`, `server/src/routes/voice.js` | Proxied via Node `/voice/stt` | **Fully Functional (Self-Hosted)** | Runs locally on CPU via CTranslate2 (`base` model). Client automatically falls back to browser Web Speech API if down. |
-| **Piper TTS** | High-speed neural text-to-speech generating natural Indian/English spoken audio. | `ai-service/main.py`, `server/src/routes/voice.js` | `PIPER_VOICE_PATH` | **Functional with Model File** | Requires ONNX voice file (`en_US-lessac-medium`). Client automatically falls back to browser `speechSynthesis` if down. |
+| **FastEmbed / ONNX Runtime** | Multilingual 384-dimension embeddings (`paraphrase-multilingual-MiniLM-L12-v2`) for semantic intent ranking. | `ai-service/main.py` | `AI_SERVICE_URL`, `AI_SERVICE_TOKEN` | **Deployable on Render Free** | Model is pre-downloaded during build; free service may sleep after idle. The Node backend falls back to lexical scoring on unavailable/slow AI. |
+| **Faster-Whisper** | Optional local speech-to-text on uploaded audio. | `ai-service/main.py`, `server/src/routes/voice.js` | Local-only optional dependencies | **Optional local install** | Install `ai-service/requirements-local.txt`; excluded from Render free deployment. Browser Web Speech API remains the fallback. |
+| **Piper TTS** | Optional local neural text-to-speech. | `ai-service/main.py`, `server/src/routes/voice.js` | `PIPER_VOICE_PATH` | **Optional local install** | Requires the local Piper dependency and ONNX voice file; excluded from Render free deployment. Browser speech synthesis remains the fallback. |
 | **Web Speech API** | Browser-native speech recognition and speech synthesis. | `client/src/voice.js` | N/A (Native browser API) | **Fully Functional** | Speech recognition is natively supported in Chromium browsers (Chrome, Edge); falls back to typing in Firefox/Safari. |
 | **WebRTC & Web Audio API** | Real-time P2P browser calling, dual-channel audio mixing, and supervisor monitoring. | `client/src/useCallEngine.js`, `client/src/callRecorder.js`, `server/src/socket/signaling.js` | `JWT_SECRET` | **Fully Functional & Free Forever** | Relies on Google public STUN (`stun.l.google.com:19302`) and local Socket.IO signaling. No third-party media server costs. |
 | **QRCode (npm)** | Generates base64 data URLs for scannable Razorpay payment links. | `server/src/routes/fines.js` | N/A (Local npm module) | **Fully Functional** | Encodes payment link URLs directly on the server for instant modal rendering and email attachments. |
@@ -462,7 +462,7 @@ python -m venv venv
 venv\Scripts\activate
 # Linux/macOS:
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-local.txt
 ```
 
 ### 8.3. Running the Stack

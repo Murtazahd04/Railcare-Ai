@@ -25,6 +25,7 @@ README.private.md
 # Python AI microservice — venv and downloaded model weights are large and local-only
 ai-service/venv/
 ai-service/voices/
+ai-service/.fastembed_cache/
 ai-service/__pycache__/
 *.pyc
 

@@ -8,12 +8,13 @@ This guide takes you from the GitHub repo to a **live, publicly accessible app a
 | Backend | Node/Express REST API + Socket.IO (WebRTC signaling) | **Render** (free web service) |
 | Frontend | React + Vite static site | **Vercel** (or Netlify / Cloudflare Pages) |
 | Keep-alive | Pings the backend so it doesn't sleep | **UptimeRobot** (free) |
-| AI service (optional) | Python FastAPI (embeddings / Whisper / Piper) | **Not deployed** — too heavy for free tiers; the app falls back automatically |
+| AI intent service | Python FastAPI + FastEmbed/ONNX multilingual classifier | **Render** (free web service; optional for API, but enables semantic embeddings) |
 
 ```
  Browser ──HTTPS──> Vercel (static React build)
     │
     ├──HTTPS REST──> Render: Node API ──> MongoDB Atlas (M0)
+    │                       └──HTTPS + shared token──> Render: Python AI classifier
     └──WSS (Socket.IO / WebRTC signaling)──┘
  Browser <──WebRTC audio (peer-to-peer, STUN/optional TURN)──> Browser
  Twilio / Razorpay / Gmail  ──(optional)──> Render API
@@ -163,7 +164,9 @@ Verify: Atlas → *Database → Browse Collections* → `srlms` should contain `
 | `TWILIO_EXECUTIVE_FALLBACK_NUMBER` | Verified phone to bridge calls to | optional |
 | `TWILIO_WHATSAPP_FROM` / `TWILIO_WHATSAPP_JOIN_CODE` | Sandbox number / join phrase | optional |
 | `RESEND_API_KEY` / `RESEND_FROM_EMAIL` / `EMAIL_FROM_NAME` / `SOS_ALERT_EMAIL` | Resend API; `onboarding@resend.dev` for testing, verified domain required for passenger email | optional |
-| `AI_SERVICE_URL` | **Leave unset** | — |
+| `AI_SERVICE_URL` | Public `https://<AI-service-name>.onrender.com` URL from Render | Optional; enables Python embeddings |
+| `AI_SERVICE_TOKEN` | Shared generated secret on both Render services | Required when AI service is deployed |
+| `AI_CLASSIFY_TIMEOUT_MS` | `8000` | Optional; bounded from 1000–30000 ms |
 
 Do **not** set `PORT` — Render injects it.
 
@@ -253,8 +256,18 @@ WebRTC audio is peer-to-peer. Over STUN only, calls between devices on mobile da
 
 These values ship to every browser (that is inherent to WebRTC TURN). Use the provider's limited free credentials, never anything privileged.
 
-### 9.5 AI service (Python) — optional, not deployed
-`ai-service/` needs ~1–2 GB of ML libraries plus model downloads, more than free web tiers allow. You do **not** need it: the server automatically falls back to its built-in keyword/Jaccard classifier, and the browser's Web Speech API handles speech in/out. If you want it anyway, host it on a free-CPU container platform that has enough RAM (e.g. a Hugging Face Docker Space), then set `AI_SERVICE_URL` on Render to its public URL. Expect slow cold starts, and check that platform's port requirements (the Dockerfile listens on 8001).
+### 9.5 AI intent service (Python on Render Free)
+The Blueprint now defines a separate `srlms-ai-classifier` Python web service. It uses FastEmbed/ONNX Runtime with the multilingual `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` model and excludes PyTorch, Whisper and Piper from the free deployment. The model is downloaded during the Render build; the free service uses CPU inference and can spin down after inactivity.
+
+1. Deploy or sync the Blueprint. The Node API and Python classifier must be in the same Render region (the Blueprint sets both to Singapore).
+2. In Render, open the Python service and copy its public `onrender.com` URL into the Node service's `AI_SERVICE_URL` environment variable.
+3. The Blueprint shares `AI_SERVICE_TOKEN` between both services through the `srlms-ai-auth` environment-variable group. Do not expose this value in the frontend or logs.
+4. Wait for the Python service to finish its initial build and become healthy. `GET <AI_SERVICE_URL>/health` returns the model name and whether it has been loaded in memory. The first classification after a service restart may need to load the model.
+5. Test `POST <AI_SERVICE_URL>/classify` from the backend using the shared bearer token and a small sample payload; do not call the protected classifier directly from the browser.
+
+Render Free services can sleep after 15 minutes without inbound traffic and take about a minute to wake. The Node classifier waits up to 8 seconds by default; if the Python service is still waking, the current query uses the Node lexical fallback and subsequent queries can use embeddings once the Python service is ready. This is a free-tier tradeoff, not a guaranteed always-on real-time inference service. Speech-to-text and text-to-speech dependencies are only available through `ai-service/requirements-local.txt`; browser speech APIs remain the production fallback.
+
+The model's multilingual label is not a guarantee of Hinglish transliteration accuracy. A local smoke test scored an English paraphrase well but matched the sample "Mera kambal nahi mila" poorly against English-only examples. Add representative Hindi-script and Hinglish questions or synonyms to the admin knowledge base, then test a labeled sample set before relying on those languages in production. Cosine similarity values are not accuracy percentages.
 
 ---
 

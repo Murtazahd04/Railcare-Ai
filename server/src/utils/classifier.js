@@ -4,9 +4,9 @@
  * This is intentionally simple (token-overlap + keyword/synonym scoring)
  * so the whole project runs on localhost with zero extra infrastructure.
  * It is a drop-in replacement point: swap `scoreIntent` for a call to a
- * Python FastAPI service running sentence-transformers + FAISS later
- * without changing any route code — `classify()` is the only entry point
- * routes depend on.
+ * Python FastAPI service running multilingual ONNX embeddings, with the
+ * local lexical scorer retained as a fallback — `classify()` is the only
+ * entry point routes depend on.
  */
 
 const STOPWORDS = new Set([
@@ -44,13 +44,18 @@ function scoreIntent(inputTokens, intent) {
   // these represent exact-concept matches even with few overlapping tokens
   const bagTerms = [...(intent.synonyms || []), ...(intent.keywords || [])].map((s) => s.toLowerCase());
   let hits = 0;
+  let strongestTermCoverage = 0;
   for (const term of bagTerms) {
     const termTokens = tokenize(term);
-    if (termTokens.every((t) => inputSet.has(t))) hits++;
+    if (termTokens.every((t) => inputSet.has(t))) {
+      hits++;
+      strongestTermCoverage = Math.max(strongestTermCoverage, termTokens.length / Math.max(1, inputSet.size));
+    }
   }
   const bagScore = bagTerms.length ? Math.min(1, hits / Math.max(1, bagTerms.length) + hits * 0.15) : 0;
 
-  return Math.min(1, best * 0.65 + bagScore * 0.35 + (hits > 0 ? 0.1 : 0));
+  const score = best * 0.65 + bagScore * 0.35 + (hits > 0 ? 0.1 : 0);
+  return Math.min(1, Math.max(score, best * 0.75, strongestTermCoverage * 0.75));
 }
 
 /**
@@ -73,7 +78,7 @@ function classifyLocal(utterance, intents) {
 }
 
 /**
- * Tries the optional Python AI microservice (real sentence-transformers
+ * Tries the optional Python AI microservice (FastEmbed multilingual
  * embeddings) at AI_SERVICE_URL (default http://localhost:8001). Returns
  * null on any failure (service not running, timeout, bad response) so the
  * caller can fall back — this never throws.
@@ -81,12 +86,20 @@ function classifyLocal(utterance, intents) {
 async function tryRemoteClassify(utterance, intents) {
   const baseUrl = process.env.AI_SERVICE_URL || "http://localhost:8001";
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 2000);
+  const configuredTimeout = Number(process.env.AI_CLASSIFY_TIMEOUT_MS);
+  const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout >= 1000 && configuredTimeout <= 30000
+    ? configuredTimeout
+    : 8000;
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    const headers = { "Content-Type": "application/json" };
+    if (process.env.AI_SERVICE_TOKEN) {
+      headers.Authorization = `Bearer ${process.env.AI_SERVICE_TOKEN}`;
+    }
     const res = await fetch(`${baseUrl}/classify`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       signal: controller.signal,
       body: JSON.stringify({
         utterance,
@@ -99,7 +112,10 @@ async function tryRemoteClassify(utterance, intents) {
         })),
       }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn(`[classifier] Python AI service returned HTTP ${res.status}; using local classifier.`);
+      return null;
+    }
     const data = await res.json();
 
     const matchedDoc = data.matchedIntent ? intents.find((i) => i.name === data.matchedIntent) || null : null;
@@ -107,10 +123,15 @@ async function tryRemoteClassify(utterance, intents) {
       intent: matchedDoc,
       confidence: data.confidence ?? 0,
       ranked: data.ranked || [],
-      source: "sentence-transformers",
+      source: "fastembed-multilingual",
     };
   } catch (err) {
-    return null; // AI microservice not running, timed out, or errored — caller falls back silently
+    if (err.name === "AbortError") {
+      console.warn(`[classifier] Python AI service timed out after ${timeoutMs}ms; using local classifier.`);
+    } else {
+      console.warn("[classifier] Python AI service unavailable; using local classifier:", err.message);
+    }
+    return null; silently
   } finally {
     clearTimeout(timeout);
   }

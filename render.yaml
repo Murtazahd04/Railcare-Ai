@@ -1,6 +1,12 @@
 # Render Blueprint — one-click backend deploy (free plan).
 # Dashboard -> New -> Blueprint -> pick this repo. Render will ask for the `sync: false` values.
 # The frontend is deployed separately (Vercel/Netlify/Cloudflare) — see DEPLOYMENT.md.
+envVarGroups:
+  - name: srlms-ai-auth
+    envVars:
+      - key: AI_SERVICE_TOKEN
+        generateValue: true
+
 services:
   - type: web
     name: srlms-api
@@ -25,6 +31,11 @@ services:
         sync: false             # paste your MongoDB Atlas connection string
       - key: CORS_ORIGINS
         sync: false             # your frontend URL, e.g. https://srlms.vercel.app
+      - key: AI_SERVICE_URL
+        sync: false             # public URL of srlms-ai-classifier; free services cannot receive private-network traffic
+      - key: AI_CLASSIFY_TIMEOUT_MS
+        value: "8000"
+      - fromGroup: srlms-ai-auth
       # ---- optional integrations (leave blank to disable; the app degrades gracefully) ----
       - key: RAZORPAY_KEY_ID
         sync: false
@@ -50,3 +61,21 @@ services:
         value: Indian Railways SRLMS
       - key: SOS_ALERT_EMAIL
         sync: false
+  - type: web
+    name: srlms-ai-classifier
+    runtime: python
+    rootDir: ai-service
+    buildCommand: >-
+      pip install -r requirements.txt &&
+      python -c "from fastembed import TextEmbedding; TextEmbedding(model_name='sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2', cache_dir='.fastembed_cache', threads=1, providers=['CPUExecutionProvider'])"
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    plan: free
+    region: singapore
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - fromGroup: srlms-ai-auth
+      - key: FASTEMBED_CACHE_DIR
+        value: .fastembed_cache
+      - key: REQUIRE_AI_SERVICE_TOKEN
+        value: "true"
