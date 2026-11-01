@@ -28,7 +28,18 @@ export default function App() {
   useEffect(() => {
     const saved = localStorage.getItem(SESSION_KEY);
     if (saved) {
-      try { setSession(JSON.parse(saved)); } catch { /* ignore corrupt value */ }
+      try {
+        const restoredSession = JSON.parse(saved);
+        if (typeof restoredSession?.token !== "string" || !restoredSession.token || !restoredSession?.user?.role) {
+          localStorage.removeItem(SESSION_KEY);
+          window.location.hash = "#/staff-login";
+          return;
+        }
+        setSession(restoredSession);
+      } catch {
+        localStorage.removeItem(SESSION_KEY);
+        window.location.hash = "#/staff-login";
+      }
     }
   }, []);
 
@@ -76,7 +87,7 @@ export default function App() {
   }
 
   if (hash.startsWith("#/admin")) {
-    if (role !== "admin") {
+    if (role !== "admin" && role !== "super_admin") {
       return <AccessDenied message="This view is for admins." onLogout={handleLogout} />;
     }
     return <AdminTrainingDashboard user={session.user} token={session.token} onLogout={handleLogout} />;
@@ -84,7 +95,7 @@ export default function App() {
 
   // default route: role-based landing
   if (role === "supervisor") return <SupervisorDashboard user={session.user} token={session.token} onLogout={handleLogout} />;
-  if (role === "admin") return <AdminTrainingDashboard user={session.user} token={session.token} onLogout={handleLogout} />;
+  if (role === "admin" || role === "super_admin") return <AdminTrainingDashboard user={session.user} token={session.token} onLogout={handleLogout} />;
   return <ExecutiveDashboard user={session.user} token={session.token} onLogout={handleLogout} />;
 }
 

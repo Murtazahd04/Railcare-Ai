@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import {
   Brain, FolderPlus, Plus, X, ChevronRight, Sparkles, LogOut,
   Tag, MessageSquare, Wand2, Target, Gauge, PlayCircle, Loader2,
-  AlertCircle, Check, ArrowRight,
+  AlertCircle, Check, ArrowRight, Users, Search, Pencil, ShieldCheck,
 } from "lucide-react";
 
 import { API_BASE } from "./config";
@@ -103,6 +103,201 @@ function UnansweredQueriesPanel({ rows, loading, intents, token, onRefresh }) {
   );
 }
 
+function UserManagementPanel({ token, currentUser }) {
+  const [users, setUsers] = useState([]);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [editingUser, setEditingUser] = useState(null);
+  const [currentUserId, setCurrentUserId] = useState(null);
+
+  const loadUsers = useCallback(async (query = "") => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      if (query.trim()) params.set("search", query.trim());
+      const queryString = params.toString();
+      const result = await api(`/users${queryString ? `?${queryString}` : ""}`, token);
+      setUsers(result);
+      if (!currentUserId && currentUser?.username) {
+        const signedInUser = result.find((staffUser) => staffUser.username === currentUser.username);
+        if (signedInUser) setCurrentUserId(signedInUser._id);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [token, currentUserId, currentUser?.username]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => loadUsers(search), 250);
+    return () => clearTimeout(timer);
+  }, [loadUsers, search]);
+
+  return (
+    <div className="mx-auto max-w-6xl space-y-4 p-4 sm:p-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="flex items-center gap-2 text-lg font-semibold text-[#0F172A]">
+            <Users size={19} className="text-[#0284C7]" /> User management
+          </h1>
+          <p className="mt-1 text-xs text-[#64748B]">Search staff accounts and update their name, username, or role. Passwords are never displayed.</p>
+        </div>
+        <div className="relative w-full sm:max-w-sm">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search name, username, or role…"
+            className="w-full rounded-md border border-[#CBD5E1] bg-white py-2.5 pl-9 pr-3 text-xs focus:border-[#0284C7] focus:outline-none"
+          />
+        </div>
+      </div>
+
+      {error && <div role="alert" className="rounded-md border border-[#E5484D]/30 bg-[#FEF3F2] px-3 py-2 text-xs text-[#B42318]">{error}</div>}
+
+      <div className="overflow-hidden rounded-lg border border-[#BBF7D0] bg-gradient-to-br from-white via-[#F0FDF4] to-[#DCFCE7]">
+        <div className="flex items-center justify-between border-b border-[#BBF7D0] px-4 py-3">
+          <span className="text-xs font-semibold text-[#334155]">Staff accounts</span>
+          <span className="text-[11px] text-[#64748B]">{loading ? "Loading…" : `${users.length}${users.length === 200 ? "+" : ""} account${users.length === 1 ? "" : "s"}`}</span>
+        </div>
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 py-12 text-xs text-[#64748B]"><Loader2 size={14} className="animate-spin" /> Loading staff users…</div>
+        ) : users.length === 0 ? (
+          <div className="py-12 text-center text-xs text-[#64748B]">{search ? "No users match your search." : "No staff users found."}</div>
+        ) : (
+          <div className="divide-y divide-[#BBF7D0]">
+            {users.map((staffUser) => {
+              const canEdit = currentUser?.role === "super_admin" || staffUser.role !== "super_admin";
+              const isSelf = staffUser.isCurrentUser || staffUser._id === currentUserId || staffUser.username === currentUser?.username;
+              return (
+                <article key={staffUser._id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 hover:bg-white/60">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#DCFCE7] text-[#16803C]">
+                      <ShieldCheck size={16} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium text-[#0F172A]">{staffUser.name}</div>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[#64748B]">
+                        <span className="font-mono">@{staffUser.username}</span>
+                        <span className="rounded-full border border-[#CBD5E1] bg-white px-2 py-0.5 capitalize">{staffUser.role.replaceAll("_", " ")}</span>
+                        {isSelf && <span className="text-[#0284C7]">You</span>}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!canEdit}
+                    onClick={() => setEditingUser(staffUser)}
+                    className="flex items-center gap-1.5 rounded-md border border-[#CBD5E1] bg-white px-3 py-2 text-[11px] font-medium text-[#475569] hover:border-[#0284C7] hover:text-[#0369A1] disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Pencil size={12} /> {canEdit ? "Edit profile" : "Protected account"}
+                  </button>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      {editingUser && (
+        <EditStaffUserModal
+          staffUser={editingUser}
+          currentUser={currentUser}
+          isSelf={editingUser.isCurrentUser || editingUser._id === currentUserId || editingUser.username === currentUser?.username}
+          token={token}
+          onClose={() => setEditingUser(null)}
+          onSaved={() => { setEditingUser(null); loadUsers(search); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function EditStaffUserModal({ staffUser, currentUser, isSelf, token, onClose, onSaved }) {
+  const [form, setForm] = useState({ name: staffUser.name, username: staffUser.username, role: staffUser.role });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const roles = [
+    { value: "executive", label: "Executive" },
+    { value: "supervisor", label: "Supervisor" },
+    { value: "admin", label: "Admin" },
+    { value: "coach_attendant", label: "Coach attendant" },
+    { value: "laundry_manager", label: "Laundry manager" },
+    { value: "store_manager", label: "Store manager" },
+    { value: "transport_manager", label: "Transport manager" },
+    { value: "tte", label: "TTE" },
+    ...(currentUser?.role === "super_admin" ? [{ value: "super_admin", label: "Super admin" }] : []),
+  ];
+
+  async function submit(event) {
+    event.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      await api(`/users/${staffUser._id}`, token, {
+        method: "PATCH",
+        body: JSON.stringify(form),
+      });
+      onSaved();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <ModalShell title="Edit staff profile" onClose={onClose}>
+      <form onSubmit={submit} className="space-y-3">
+        {error && <div role="alert" className="rounded-md bg-[#FEF3F2] px-3 py-2 text-xs text-[#B42318]">{error}</div>}
+        <label className="block text-xs font-medium text-[#334155]">
+          Display name
+          <input
+            required
+            maxLength={150}
+            value={form.name}
+            onChange={(event) => setForm((value) => ({ ...value, name: event.target.value }))}
+            className="mt-1.5 w-full rounded-md border border-[#CBD5E1] px-3 py-2 text-sm focus:border-[#0284C7] focus:outline-none"
+          />
+        </label>
+        <label className="block text-xs font-medium text-[#334155]">
+          Username
+          <input
+            required
+            minLength={3}
+            maxLength={50}
+            pattern="[A-Za-z0-9._-]+"
+            value={form.username}
+            onChange={(event) => setForm((value) => ({ ...value, username: event.target.value }))}
+            className="mt-1.5 w-full rounded-md border border-[#CBD5E1] px-3 py-2 text-sm focus:border-[#0284C7] focus:outline-none"
+          />
+        </label>
+        <label className="block text-xs font-medium text-[#334155]">
+          Staff role
+          <select
+            value={form.role}
+            disabled={isSelf}
+            onChange={(event) => setForm((value) => ({ ...value, role: event.target.value }))}
+            className="mt-1.5 w-full rounded-md border border-[#CBD5E1] bg-white px-3 py-2 text-sm focus:border-[#0284C7] focus:outline-none disabled:opacity-60"
+          >
+            {roles.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
+          </select>
+          {isSelf && <span className="mt-1 block text-[10px] font-normal text-[#64748B]">Your own role cannot be changed here.</span>}
+        </label>
+        <p className="rounded-md bg-[#F8FAFC] px-3 py-2 text-[10px] text-[#64748B]">Password is not shown or changed from this profile editor.</p>
+        <div className="flex justify-end gap-2 border-t border-[#E2E8F0] pt-3">
+          <button type="button" onClick={onClose} className="rounded-md border border-[#CBD5E1] px-3 py-2 text-xs text-[#475569]">Cancel</button>
+          <button type="submit" disabled={saving} className="rounded-md bg-[#16803C] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">
+            {saving ? "Saving…" : "Save profile"}
+          </button>
+        </div>
+      </form>
+    </ModalShell>
+  );
+}
+
 export default function AdminTrainingDashboard({ user, token, onLogout }) {
   const [categories, setCategories] = useState([]);
   const [intents, setIntents] = useState([]);
@@ -111,7 +306,7 @@ export default function AdminTrainingDashboard({ user, token, onLogout }) {
   const [showNewCategory, setShowNewCategory] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
   const [error, setError] = useState(null);
-  const [view, setView] = useState("kb"); // "kb" | "unanswered"
+  const [view, setView] = useState("kb"); // "kb" | "unanswered" | "users"
   const [unanswered, setUnanswered] = useState([]);
   const [unansweredLoading, setUnansweredLoading] = useState(false);
 
@@ -176,6 +371,10 @@ export default function AdminTrainingDashboard({ user, token, onLogout }) {
             <AlertCircle size={12} /> Unanswered
             {unanswered.length > 0 && <span className="bg-[#E5484D]/20 text-[#E5484D] rounded-full px-1.5">{unanswered.length}</span>}
           </button>
+          <button onClick={() => setView("users")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs ${view === "users" ? "bg-[#FFFFFF] text-[#0F172A]" : "text-[#64748B]"}`}>
+            <Users size={12} /> Users
+          </button>
         </div>
         {onLogout && (
           <div className="flex flex-wrap items-center gap-2">
@@ -203,7 +402,9 @@ export default function AdminTrainingDashboard({ user, token, onLogout }) {
         <div className="m-6 text-xs text-[#E5484D] bg-[#E5484D]/10 border border-[#E5484D]/30 rounded-md px-3 py-2">{error}</div>
       )}
 
-      {view === "unanswered" ? (
+      {view === "users" ? (
+        <UserManagementPanel token={token} currentUser={user} />
+      ) : view === "unanswered" ? (
         <UnansweredQueriesPanel
           rows={unanswered}
           loading={unansweredLoading}

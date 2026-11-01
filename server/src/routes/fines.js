@@ -44,18 +44,19 @@ router.post("/", requireAuth, validateBody(fineCreateSchema), async (req, res) =
     ).catch(() => {});
   }
   const notifyEmail = passenger?.email || f.overrideEmail;
-  if (notifyEmail) {
-    sendEmail(
+  const emailResult = notifyEmail
+    ? await sendEmail(
       notifyEmail,
       `A fine has been recorded — PNR ${f.pnr}`,
       `Hi ${passenger?.name || f.passengerName},\n\nA fine of ₹${f.amount} has been recorded for "${f.reason}" (PNR ${f.pnr}). Please check the app to view and pay it.\n\n— Indian Railways`
-    ).catch(() => {});
-  }
+    ).catch((err) => ({ sent: false, reason: err.message }))
+    : { sent: false, reason: "No passenger email address is available." };
 
-  // Lets the dashboard know whether it needs to prompt the executive for a
-  // manual email before generating a payment QR/link — the passenger record
-  // may simply not have one on file (e.g. walk-up/phone booking).
-  res.status(201).json({ ...f.toObject(), passengerEmailOnFile: Boolean(passenger?.email) });
+  res.status(201).json({
+    ...f.toObject(),
+    passengerEmailOnFile: Boolean(passenger?.email),
+    email: emailResult,
+  });
 });
 
 // Executive-entered fallback email, for when the passenger has none on file.

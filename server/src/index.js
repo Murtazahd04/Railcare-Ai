@@ -19,6 +19,7 @@ const { validateEnv, getAllowedOrigins } = require("./utils/config");
 const mongoose = require("mongoose");
 
 const authRoutes = require("./routes/auth");
+const userRoutes = require("./routes/users");
 const passengerRoutes = require("./routes/passengers");
 const trainRoutes = require("./routes/trains");
 const rfidRoutes = require("./routes/rfid");
@@ -75,6 +76,7 @@ async function main() {
   app.use(generalLimiter);
 
   app.use("/api/v1/auth", authLimiter, authRoutes); // stricter limit specifically on login/session endpoints
+  app.use("/api/v1/users", userRoutes);
   app.use("/api/v1/passengers", passengerRoutes);
   app.use("/api/v1/trains", trainRoutes);
   app.use("/api/v1/rfid", rfidRoutes);

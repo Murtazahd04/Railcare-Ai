@@ -79,6 +79,7 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
   const hasCall = canAct || Boolean(engine.incoming);
 
   const apiPost = useCallback(async (path, body) => {
+    if (!token) throw new Error("Your staff login is missing. Sign in again.");
     const res = await fetch(`${API_BASE}${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -95,6 +96,7 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
   }, [token]);
 
   const apiDelete = useCallback(async (path) => {
+    if (!token) throw new Error("Your staff login is missing. Sign in again.");
     const res = await fetch(`${API_BASE}${path}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
@@ -110,6 +112,7 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
   }, [token]);
 
   const apiPatch = useCallback(async (path, body) => {
+    if (!token) throw new Error("Your staff login is missing. Sign in again.");
     const res = await fetch(`${API_BASE}${path}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -451,6 +454,10 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
       pushToast("Enter a reason and a fine amount between ₹0.01 and ₹10,00,000.", "warn");
       return;
     }
+    if (!token) {
+      pushToast("Your staff login is missing. Sign in again before creating a fine.", "warn");
+      return;
+    }
     if (overrideEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(overrideEmail)) {
       pushToast("Enter a valid passenger email address.", "warn");
       return;
@@ -467,7 +474,13 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
       setFineId(fine._id);
       setFineAmount(fine.amount);
       setFineModalOpen(false);
-      pushToast(`Fine recorded — ₹${fine.amount} (#${fine._id.slice(-6)})`, "primary");
+      if (fine.email?.sent) {
+        pushToast(`Fine recorded and notice emailed — ₹${fine.amount} (#${fine._id.slice(-6)})`, "primary");
+      } else if (fine.email?.reason === "No passenger email address is available.") {
+        pushToast(`Fine recorded — ₹${fine.amount}. Add an email when generating its payment QR.`, "warn");
+      } else {
+        pushToast(`Fine recorded — email failed: ${fine.email?.reason || "unknown email error"}`, "warn");
+      }
     } catch (err) {
       pushToast(`Failed to create fine: ${err.message}`, "warn");
     } finally {
@@ -488,7 +501,7 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
       } else if (data.email?.reason === "not_configured") {
         pushToast("Payment QR generated (email not configured — see server/.env)", "warn");
       } else {
-        pushToast("Payment QR generated, but emailing it failed", "warn");
+        pushToast(`Payment QR generated, but email failed: ${data.email?.reason || "unknown email error"}`, "warn");
       }
     } catch (err) {
       if (err.data?.code === "NO_EMAIL" || err.message?.includes("No email on file")) {
