@@ -878,12 +878,17 @@ function LiveTester({ token }) {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const isPythonSource = ["fastembed-english", "fastembed-multilingual"].includes(result?.source);
   const classifierLabel = result?.source === "fastembed-english"
-    ? "Python English embeddings active"
-    : result?.source === "local-lexical"
-      ? "Node.js lexical classifier"
-      : "Unknown classifier";
-  const classifierTone = result?.source === "fastembed-english"
+    ? "Python English embeddings"
+    : result?.source === "fastembed-multilingual"
+      ? "Python embeddings (legacy API label)"
+      : result?.source === "local-lexical"
+        ? "Node.js lexical classifier"
+        : result?.source
+          ? `Unrecognized source: ${result.source}`
+          : "API did not report classifier source";
+  const classifierTone = isPythonSource
     ? "bg-[#2FBF71]/10 border-[#2FBF71]/30 text-[#16854A]"
     : "bg-[#F5A623]/10 border-[#F5A623]/30 text-[#9A6700]";
 
@@ -940,6 +945,27 @@ function LiveTester({ token }) {
             <span className="font-medium">Classifier used for this query</span>
             <span className="font-semibold">{classifierLabel}</span>
           </div>
+          {result.source === "fastembed-multilingual" && (
+            <div className="text-[11px] text-[#64748B]">
+              This result came from an older Node API source label. Redeploy the Node API to use the current compact-English model label.
+            </div>
+          )}
+          {!result.source && (
+            <div className="text-[11px] text-[#64748B]">
+              This API response omitted its source field. Redeploy the Node API so the tester can identify which classifier handled the query.
+            </div>
+          )}
+          {result.source && !["fastembed-english", "fastembed-multilingual", "local-lexical"].includes(result.source) && (
+            <div className="text-[11px] text-[#64748B]">
+              The API returned an unrecognized source identifier. Check the deployed Node API version.
+            </div>
+          )}
+          {result.source && (
+            <div className="flex items-center justify-between text-[10px] text-[#64748B]">
+              <span>API source identifier</span>
+              <span className="font-mono">{result.source}</span>
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <span>Matched intent</span>
             <span className={result.matchedIntent ? "text-[#0284C7]" : "text-[#64748B]"}>{result.matchedIntent || "none"}</span>
