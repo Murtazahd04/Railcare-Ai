@@ -33,8 +33,64 @@ export default function ExecutiveLiveCallPanel({ engine, token }) {
   const [recordingState, setRecordingState] = useState("idle"); // idle | recording | uploading | saved | failed
   const [profile, setProfile] = useState(null); // { passenger, complaints, fines } fetched by PNR
   const [profileError, setProfileError] = useState(null);
+  const [ringAudioBlocked, setRingAudioBlocked] = useState(false);
   const recorderRef = useRef(null);
   const lastCallIdRef = useRef(null);
+  const ringStartRef = useRef(null);
+
+  useEffect(() => {
+    if (!incoming) {
+      ringStartRef.current = null;
+      setRingAudioBlocked(false);
+      return undefined;
+    }
+
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) {
+      setRingAudioBlocked(true);
+      return undefined;
+    }
+
+    const audioContext = new AudioContextClass();
+    let intervalId;
+    let disposed = false;
+    const playRing = () => {
+      if (disposed || audioContext.state !== "running") return;
+      [0, 0.42].forEach((offset) => {
+        const oscillator = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        const startAt = audioContext.currentTime + offset;
+        oscillator.type = "sine";
+        oscillator.frequency.setValueAtTime(880, startAt);
+        oscillator.frequency.setValueAtTime(660, startAt + 0.18);
+        gain.gain.setValueAtTime(0.0001, startAt);
+        gain.gain.exponentialRampToValueAtTime(0.16, startAt + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.3);
+        oscillator.connect(gain);
+        gain.connect(audioContext.destination);
+        oscillator.start(startAt);
+        oscillator.stop(startAt + 0.31);
+      });
+    };
+    const startRinging = () => audioContext.resume().then(() => {
+      if (disposed) return;
+      setRingAudioBlocked(false);
+      playRing();
+      if (!intervalId) intervalId = setInterval(playRing, 1800);
+    }).catch((err) => {
+      console.warn("[call:ring] browser blocked ring audio:", err.message);
+      setRingAudioBlocked(true);
+    });
+
+    ringStartRef.current = startRinging;
+    startRinging();
+    return () => {
+      disposed = true;
+      ringStartRef.current = null;
+      clearInterval(intervalId);
+      audioContext.close().catch(() => {});
+    };
+  }, [incoming?.callId]);
 
   // whenever the caller's PNR becomes known (incoming card or active call), pull their full record
   const activePnr = incoming?.context?.pnr || callContext?.pnr || null;
@@ -82,7 +138,9 @@ export default function ExecutiveLiveCallPanel({ engine, token }) {
   }, [status, token]);
 
   return (
-    <div className="rounded-lg border border-[#BBF7D0] bg-gradient-to-br from-white via-[#F0FDF4] to-[#DCFCE7] p-4 space-y-3">
+    <div className={`rounded-lg border border-[#BBF7D0] bg-gradient-to-br from-white via-[#F0FDF4] to-[#DCFCE7] p-4 space-y-3 ${
+      incoming || status === "connected" ? "h-full min-h-[calc(100vh-118px)] overflow-y-auto" : ""
+    }`}>
       <audio ref={remoteAudioRef} autoPlay playsInline />
 
       <div className="flex items-center justify-between">
@@ -106,6 +164,14 @@ export default function ExecutiveLiveCallPanel({ engine, token }) {
               : "Incoming call"}
           </div>
           <div className="text-sm">{incoming.customerName}</div>
+          {ringAudioBlocked && (
+            <button
+              onClick={() => ringStartRef.current?.()}
+              className="rounded-md border border-[#F5A623]/40 bg-white px-2.5 py-1.5 text-[11px] font-medium text-[#92400E]"
+            >
+              Enable incoming-call sound
+            </button>
+          )}
           {incoming.urgency && incoming.urgency.tier !== "normal" && (
             <div className={`flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-md w-fit ${
               incoming.urgency.tier === "emergency" ? "bg-[#E5484D]/15 text-[#E5484D] border border-[#E5484D]/40"

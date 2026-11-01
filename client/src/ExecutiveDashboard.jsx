@@ -150,8 +150,18 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
   const [draggingSupportCase, setDraggingSupportCase] = useState(null);
   const [dragOverSupportStatus, setDragOverSupportStatus] = useState(null);
   const [activeSection, setActiveSection] = useState("calls");
+  const [fineModalOpen, setFineModalOpen] = useState(false);
+  const [fineForm, setFineForm] = useState({ reason: "", amount: "500", email: "" });
+  const [fineSaving, setFineSaving] = useState(false);
+  const [qrEmailModalOpen, setQrEmailModalOpen] = useState(false);
+  const [qrEmailDraft, setQrEmailDraft] = useState("");
+  const [qrEmailSaving, setQrEmailSaving] = useState(false);
   const toastIdRef = useRef(0);
   const lastStatusRef = useRef("idle");
+
+  useEffect(() => {
+    if (engine.incoming) setActiveSection("calls");
+  }, [engine.incoming?.callId]);
 
   useEffect(() => {
     if (!detailModal?.customerPnr) { setDetailProfile(null); return; }
@@ -427,47 +437,41 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
     }
   }
 
-  async function handleFine() {
-    const reason = window.prompt("Fine reason?", topic || "Linen not returned");
-    if (!reason) return;
-    const amountStr = window.prompt("Fine amount (INR)?", "500");
-    const amount = parseFloat(amountStr);
-    if (!amount || amount <= 0) {
-      pushToast("Fine cancelled — invalid amount", "warn");
+  function handleFine() {
+    setFineForm({ reason: topic || "Linen not returned", amount: "500", email: "" });
+    setFineModalOpen(true);
+  }
+
+  async function handleCreateFine(event) {
+    event.preventDefault();
+    const reason = fineForm.reason.trim();
+    const amount = Number(fineForm.amount);
+    const overrideEmail = fineForm.email.trim();
+    if (!reason || !Number.isFinite(amount) || amount <= 0 || amount > 1000000) {
+      pushToast("Enter a reason and a fine amount between ₹0.01 and ₹10,00,000.", "warn");
       return;
     }
+    if (overrideEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(overrideEmail)) {
+      pushToast("Enter a valid passenger email address.", "warn");
+      return;
+    }
+    setFineSaving(true);
     try {
-      const fine = await apiPost("/fines", { passengerName, pnr: pnr || "UNKNOWN", reason, amount });
+      const fine = await apiPost("/fines", {
+        passengerName,
+        pnr: pnr || "UNKNOWN",
+        reason,
+        amount,
+        ...(overrideEmail ? { overrideEmail } : {}),
+      });
       setFineId(fine._id);
       setFineAmount(fine.amount);
-
-      // Passenger didn't have an email on file — get one manually so the
-      // payment QR/link has somewhere to go. Skippable: if left blank, QR
-      // generation will just fail with a clear "no email" error later
-      // rather than pretending it sent something. Uses the email panel
-      // already checked above (activePassengerEmail) as the source of
-      // truth, but falls back to the server's own check in case that
-      // hadn't finished loading yet.
-      const knownNoEmail = activePassengerEmail === null || !fine.passengerEmailOnFile;
-      if (knownNoEmail) {
-        const manualEmail = window.prompt(
-          `${passengerName || "This passenger"} has no email on file. Enter one to send the fine notice & payment QR (leave blank to skip):`
-        );
-        if (manualEmail && manualEmail.trim()) {
-          try {
-            await apiPatch(`/fines/${fine._id}/email`, { overrideEmail: manualEmail.trim() });
-            pushToast(`Fine record created — ₹${fine.amount} (#${fine._id.slice(-6)}), email set`, "warn");
-          } catch (err) {
-            pushToast(`Fine created, but saving that email failed: ${err.message}`, "warn");
-          }
-        } else {
-          pushToast(`Fine record created — ₹${fine.amount} (#${fine._id.slice(-6)}), no email on file`, "warn");
-        }
-      } else {
-        pushToast(`Fine record created — ₹${fine.amount} (#${fine._id.slice(-6)})`, "warn");
-      }
+      setFineModalOpen(false);
+      pushToast(`Fine recorded — ₹${fine.amount} (#${fine._id.slice(-6)})`, "primary");
     } catch (err) {
       pushToast(`Failed to create fine: ${err.message}`, "warn");
+    } finally {
+      setFineSaving(false);
     }
   }
 
@@ -487,19 +491,31 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
         pushToast("Payment QR generated, but emailing it failed", "warn");
       }
     } catch (err) {
-      if (err.message?.includes("No email on file")) {
-        const manualEmail = window.prompt("No email on file for this fine. Enter one now to generate & send the QR:");
-        if (manualEmail && manualEmail.trim()) {
-          try {
-            await apiPatch(`/fines/${fineId}/email`, { overrideEmail: manualEmail.trim() });
-            return handleQR(); // retry now that an email is set
-          } catch (err2) {
-            pushToast(`Failed to save email: ${err2.message}`, "warn");
-          }
-        }
+      if (err.data?.code === "NO_EMAIL" || err.message?.includes("No email on file")) {
+        setQrEmailDraft("");
+        setQrEmailModalOpen(true);
         return;
       }
       pushToast(`Failed to generate QR: ${err.message}`, "warn");
+    }
+  }
+
+  async function handleSaveQrEmail(event) {
+    event.preventDefault();
+    const overrideEmail = qrEmailDraft.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(overrideEmail)) {
+      pushToast("Enter a valid passenger email address.", "warn");
+      return;
+    }
+    setQrEmailSaving(true);
+    try {
+      await apiPatch(`/fines/${fineId}/email`, { overrideEmail });
+      setQrEmailModalOpen(false);
+      await handleQR();
+    } catch (err) {
+      pushToast(`Failed to save email: ${err.message}`, "warn");
+    } finally {
+      setQrEmailSaving(false);
     }
   }
 
@@ -669,7 +685,7 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
             </div>
           )}
 
-          {activeSection === "calls" && (
+          {activeSection === "calls" && !hasCall && (
             <div className="px-4 sm:px-6 pt-5 flex gap-3 flex-wrap">
         <KpiCard icon={Phone} label="Total Calls" value={kpis?.total ?? "—"} />
         <KpiCard icon={CheckCircle2} label="AI Resolution" value={kpis ? `${kpis.aiResolutionPct}%` : "—"} sub="resolved without transfer" />
@@ -812,22 +828,8 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
         </section>
         )}
 
-        {activeSection === "calls" && (
-        <section className="space-y-5">
-        {engine.incoming && (
-          <div className="flex items-center gap-3 rounded-md border border-[#F5A623]/40 bg-[#FFF7E8] px-4 py-3 text-xs text-[#92400E]">
-            <span className="h-2.5 w-2.5 animate-ping rounded-full bg-[#E5484D]" />
-            <div className="flex-1">
-              <div className="font-semibold">Incoming call from {engine.incoming.customerName}</div>
-              <div className="mt-0.5">
-                {topic || "Passenger assistance"}{pnr && ` · PNR ${pnr}`}
-              </div>
-            </div>
-            <span className="font-semibold uppercase">{engine.incoming.kind === "transfer" ? "Transferred call" : "New call"}</span>
-          </div>
-        )}
-        <ExecutiveLiveCallPanel engine={engine} token={token} />
-        </section>
+        {activeSection === "calls" && !hasCall && (
+          <ExecutiveLiveCallPanel engine={engine} token={token} />
         )}
 
         {activeSection === "customers" && (
@@ -865,36 +867,55 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
         )}
 
         {activeSection === "calls" && hasCall && (
-          <div className="rounded-lg border border-[#BBF7D0] bg-gradient-to-br from-white via-[#F0FDF4] to-[#DCFCE7] p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="text-sm">
-                {canAct ? "Active call" : "Incoming call"} — <span className="text-[#0284C7]">{passengerName}</span>
+          <div className="grid min-h-[calc(100vh-115px)] grid-cols-1 gap-4 xl:grid-cols-2">
+            <section className="flex min-h-[420px] flex-col gap-4 rounded-lg border border-[#BBF7D0] bg-gradient-to-br from-white via-[#F0FDF4] to-[#DCFCE7] p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-[#64748B]">
+                    Passenger actions
+                  </div>
+                  <div className="mt-1 text-base font-semibold text-[#0F172A]">
+                    {canAct ? "On call with" : "Incoming call from"} <span className="text-[#0284C7]">{passengerName}</span>
+                  </div>
+                </div>
+                {engine.incoming && (
+                  <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-[#F5A623]/40 bg-[#FFF7E8] px-3 py-1.5 text-[10px] font-semibold uppercase text-[#92400E]">
+                    <span className="h-2 w-2 animate-ping rounded-full bg-[#E5484D]" />
+                    {engine.incoming.kind === "transfer" ? "Transferred call" : "Ringing"}
+                  </span>
+                )}
               </div>
-              <div className="flex gap-3 text-[11px] text-[#64748B]">
+              <div className="flex flex-wrap gap-3 text-[11px] text-[#64748B]">
                 {topic && <span className="flex items-center gap-1"><Tag size={11} /> {topic}</span>}
                 {pnr && <span className="flex items-center gap-1 font-mono"><Ticket size={11} /> {pnr}</span>}
               </div>
-            </div>
-            <div className="text-[11px] text-[#64748B]">
+              <div className="text-[11px] text-[#64748B]">
               {activePassengerEmail === undefined && pnr && "Checking passenger email…"}
               {activePassengerEmail && <>Email on file: <span className="font-mono text-[#64748B]">{activePassengerEmail}</span></>}
-              {activePassengerEmail === null && pnr && "No email on file — you'll be asked to enter one when generating a fine's QR."}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <ActionButton icon={AlertCircle} label={complaintId ? "Complaint Filed" : "Create Complaint"} onClick={handleComplaint} disabled={!!complaintId} />
-              <ActionButton icon={FileText} label={fineId ? `Fine Created — ₹${fineAmount}` : "Generate Fine"} onClick={handleFine} disabled={!!fineId} tone="warn" />
-              <ActionButton icon={QrCode} label="Generate QR" onClick={handleQR} disabled={!fineId} />
-              <ActionButton icon={PhoneCall} label="Call Passenger" onClick={handleCallPassenger} disabled={!pnr} />
-              <ActionButton icon={CheckCircle2} label="Check Payment Status" onClick={handleCheckPaymentStatus} disabled={!fineId} />
-            </div>
-            <div className="flex gap-2 pt-1">
-              <input
-                value={noteDraft}
-                onChange={(e) => setNoteDraft(e.target.value)}
-                placeholder="Add a note to this call…"
-                className="flex-1 bg-[#FFFFFF] border border-[#E2E8F0] rounded-md px-3 py-2 text-xs placeholder:text-[#64748B] focus:outline-none"
-              />
-              <ActionButton icon={StickyNote} label="Add" onClick={handleAddNote} disabled={!canAct} />
+              {activePassengerEmail === null && pnr && "No email on file — enter one in the fine or payment QR form."}
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <ActionButton icon={AlertCircle} label={complaintId ? "Complaint Filed" : "Create Complaint"} onClick={handleComplaint} disabled={!!complaintId} />
+                <ActionButton icon={FileText} label={fineId ? `Fine Created — ₹${fineAmount}` : "Create Fine"} onClick={handleFine} disabled={!!fineId} tone="warn" />
+                <ActionButton icon={QrCode} label="Generate Payment QR" onClick={handleQR} disabled={!fineId} />
+                <ActionButton icon={CheckCircle2} label="Check Payment Status" onClick={handleCheckPaymentStatus} disabled={!fineId} />
+                <ActionButton icon={PhoneCall} label="Call Passenger" onClick={handleCallPassenger} disabled={!pnr} />
+              </div>
+              <div className="mt-auto border-t border-[#BBF7D0] pt-4">
+                <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-[#64748B]">Call notes</div>
+                <div className="flex gap-2">
+                  <input
+                    value={noteDraft}
+                    onChange={(e) => setNoteDraft(e.target.value)}
+                    placeholder="Add a note to this call…"
+                    className="min-w-0 flex-1 rounded-md border border-[#E2E8F0] bg-white px-3 py-2 text-xs placeholder:text-[#64748B] focus:outline-none"
+                  />
+                  <ActionButton icon={StickyNote} label="Add" onClick={handleAddNote} disabled={!canAct} />
+                </div>
+              </div>
+            </section>
+            <div className="min-h-[65vh] xl:min-h-0">
+              <ExecutiveLiveCallPanel engine={engine} token={token} />
             </div>
           </div>
         )}
@@ -1065,6 +1086,111 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {fineModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setFineModalOpen(false)}>
+          <form
+            onSubmit={handleCreateFine}
+            className="w-full max-w-md space-y-4 rounded-xl border border-[#BBF7D0] bg-white p-5 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div>
+              <h2 className="text-base font-semibold text-[#0F172A]">Create passenger fine</h2>
+              <p className="mt-1 text-xs text-[#64748B]">
+                {passengerName}{pnr ? ` · PNR ${pnr}` : ""}
+              </p>
+            </div>
+            <label className="block text-xs font-medium text-[#334155]">
+              Fine reason
+              <input
+                autoFocus
+                required
+                maxLength={300}
+                value={fineForm.reason}
+                onChange={(event) => setFineForm((form) => ({ ...form, reason: event.target.value }))}
+                placeholder="e.g. Linen not returned"
+                className="mt-1.5 w-full rounded-md border border-[#CBD5E1] bg-white px-3 py-2.5 text-sm focus:border-[#16803C] focus:outline-none"
+              />
+            </label>
+            <label className="block text-xs font-medium text-[#334155]">
+              Amount (INR)
+              <div className="mt-1.5 flex items-center rounded-md border border-[#CBD5E1] bg-white px-3 focus-within:border-[#16803C]">
+                <span className="text-sm text-[#64748B]">₹</span>
+                <input
+                  required
+                  type="number"
+                  min="0.01"
+                  max="1000000"
+                  step="0.01"
+                  value={fineForm.amount}
+                  onChange={(event) => setFineForm((form) => ({ ...form, amount: event.target.value }))}
+                  className="w-full border-0 bg-transparent px-2 py-2.5 text-sm focus:outline-none"
+                />
+              </div>
+            </label>
+            <label className="block text-xs font-medium text-[#334155]">
+              Passenger email {activePassengerEmail ? "(already on file)" : "(optional; needed to email the payment QR)"}
+              {activePassengerEmail && (
+                <div className="mt-1.5 rounded-md bg-[#F0FDF4] px-3 py-2 text-xs font-normal text-[#166534]">{activePassengerEmail}</div>
+              )}
+              {!activePassengerEmail && (
+                <input
+                  type="email"
+                  maxLength={200}
+                  value={fineForm.email}
+                  onChange={(event) => setFineForm((form) => ({ ...form, email: event.target.value }))}
+                  placeholder="passenger@example.com"
+                  className="mt-1.5 w-full rounded-md border border-[#CBD5E1] bg-white px-3 py-2.5 text-sm focus:border-[#16803C] focus:outline-none"
+                />
+              )}
+            </label>
+            <div className="flex justify-end gap-2 border-t border-[#E2E8F0] pt-3">
+              <button type="button" onClick={() => setFineModalOpen(false)} className="rounded-md border border-[#CBD5E1] px-4 py-2 text-xs font-medium text-[#475569]">
+                Cancel
+              </button>
+              <button type="submit" disabled={fineSaving} className="rounded-md bg-[#16803C] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">
+                {fineSaving ? "Saving fine…" : "Create fine"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {qrEmailModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setQrEmailModalOpen(false)}>
+          <form
+            onSubmit={handleSaveQrEmail}
+            className="w-full max-w-sm space-y-4 rounded-xl border border-[#BBF7D0] bg-white p-5 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div>
+              <h2 className="text-base font-semibold text-[#0F172A]">Email payment QR</h2>
+              <p className="mt-1 text-xs text-[#64748B]">No email is saved for this passenger. Enter an address to send the payment link and QR.</p>
+            </div>
+            <label className="block text-xs font-medium text-[#334155]">
+              Passenger email
+              <input
+                autoFocus
+                required
+                type="email"
+                maxLength={200}
+                value={qrEmailDraft}
+                onChange={(event) => setQrEmailDraft(event.target.value)}
+                placeholder="passenger@example.com"
+                className="mt-1.5 w-full rounded-md border border-[#CBD5E1] bg-white px-3 py-2.5 text-sm focus:border-[#16803C] focus:outline-none"
+              />
+            </label>
+            <div className="flex justify-end gap-2 border-t border-[#E2E8F0] pt-3">
+              <button type="button" onClick={() => setQrEmailModalOpen(false)} className="rounded-md border border-[#CBD5E1] px-4 py-2 text-xs font-medium text-[#475569]">
+                Cancel
+              </button>
+              <button type="submit" disabled={qrEmailSaving} className="rounded-md bg-[#16803C] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">
+                {qrEmailSaving ? "Saving and generating…" : "Save email & generate QR"}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 
