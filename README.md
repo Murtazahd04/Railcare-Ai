@@ -62,7 +62,7 @@ flowchart TB
         TW_CB["Twilio Outbound Callbacks\nPSTN Mobile Bridging"]
         TW_WA["Twilio WhatsApp Sandbox\nAutomated Alerts (Join Code)"]
         RZP["Razorpay Gateway\nOrders API, Payment Links,\nHMAC-SHA256 Verification"]
-        GMAIL["Gmail SMTP (Nodemailer)\nTransactional Emails & SOS Alerts"]
+        RESEND["Resend Email API\nTransactional Emails & SOS Alerts"]
     end
 
     %% Interactions Client to Gateway
@@ -321,7 +321,7 @@ flowchart TD
 | **Twilio Voice (Inbound)** | Public telephone helpline. Transcribes passenger speech (`SpeechResult`) and runs Polly TTS. | `server/src/routes/telephony.js` | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` | **Fully Functional (Trial Mode)** | Receives real phone calls via ngrok webhook. Free trial includes 1 phone number and 75 minutes. |
 | **Twilio Voice (Outbound Callback)** | Dialing a passenger's actual mobile number when WebRTC lines are busy or an agent triggers a callback. | `server/src/utils/twilioCall.js`, `routes/voice.js` | `TWILIO_EXECUTIVE_FALLBACK_NUMBER` | **Functional (Trial Restricted)** | Inline TwiML requires no public ngrok tunnel. Trial accounts can only dial numbers pre-verified in the Twilio Console. |
 | **Twilio WhatsApp** | Automated passenger notifications for complaint registration, resolution, fines, and escalation. | `server/src/utils/whatsapp.js`, `routes/telephony.js` | `TWILIO_WHATSAPP_FROM`, `TWILIO_WHATSAPP_JOIN_CODE` | **Functional (Sandbox Mode)** | Twilio Sandbox constraint: Recipients must first message the sandbox number once with the join code (e.g., `join twilio-trial`). |
-| **Gmail SMTP (Nodemailer)** | Transactional emails for fine payment QR attachments, complaint receipts, and emergency SOS alerts. | `server/src/utils/email.js`, `socket/signaling.js` | `EMAIL_USER`, `EMAIL_PASS`, `SOS_ALERT_EMAIL` | **Configured** | Uses a Google App Password over SMTP with STARTTLS. If credentials are empty, silently skips without crashing; some hosts may block outbound SMTP. |
+| **Resend Email API** | Transactional emails for fine payment QR attachments, complaint receipts, and emergency SOS alerts. | `server/src/utils/email.js`, `socket/signaling.js` | `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `SOS_ALERT_EMAIL` | **Configured** | Uses Resend's HTTPS API. `onboarding@resend.dev` is suitable for testing; passenger delivery requires a verified sending domain. |
 | **Sentence-Transformers** | Dense vector semantic embeddings (`all-MiniLM-L6-v2`) for intent matching in Hindi/English/Hinglish. | `ai-service/main.py` | `AI_SERVICE_URL` | **Fully Functional (Self-Hosted)** | Runs locally in Python microservice. If offline, the Node backend automatically falls back to token/Jaccard scoring. |
 | **Faster-Whisper** | High-accuracy local speech-to-text on uploaded audio recordings. | `ai-service/main.py`, `server/src/routes/voice.js` | Proxied via Node `/voice/stt` | **Fully Functional (Self-Hosted)** | Runs locally on CPU via CTranslate2 (`base` model). Client automatically falls back to browser Web Speech API if down. |
 | **Piper TTS** | High-speed neural text-to-speech generating natural Indian/English spoken audio. | `ai-service/main.py`, `server/src/routes/voice.js` | `PIPER_VOICE_PATH` | **Functional with Model File** | Requires ONNX voice file (`en_US-lessac-medium`). Client automatically falls back to browser `speechSynthesis` if down. |

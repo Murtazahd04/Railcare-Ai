@@ -162,7 +162,7 @@ Verify: Atlas → *Database → Browse Collections* → `srlms` should contain `
 | `TWILIO_PHONE_NUMBER` | Your Twilio number, E.164 | optional |
 | `TWILIO_EXECUTIVE_FALLBACK_NUMBER` | Verified phone to bridge calls to | optional |
 | `TWILIO_WHATSAPP_FROM` / `TWILIO_WHATSAPP_JOIN_CODE` | Sandbox number / join phrase | optional |
-| `EMAIL_USER` / `EMAIL_PASS` / `EMAIL_FROM_NAME` / `SOS_ALERT_EMAIL` | Gmail + App Password | optional |
+| `RESEND_API_KEY` / `RESEND_FROM_EMAIL` / `EMAIL_FROM_NAME` / `SOS_ALERT_EMAIL` | Resend API; `onboarding@resend.dev` for testing, verified domain required for passenger email | optional |
 | `AI_SERVICE_URL` | **Leave unset** | — |
 
 Do **not** set `PORT` — Render injects it.
@@ -238,9 +238,8 @@ Twilio must reach your server over public HTTPS — your Render URL provides tha
 
 Trial accounts can only call/message **verified** numbers. Note that a sleeping free Render instance may miss Twilio's webhook timeout — another reason to use the keep-alive monitor.
 
-### 9.3 Gmail notifications
-Enable 2-Step Verification → create an App Password → set `EMAIL_USER`, `EMAIL_PASS`, and (optionally) `SOS_ALERT_EMAIL`.
-The backend connects to `smtp.gmail.com` on port `587` using STARTTLS. If Render still cannot establish an SMTP connection, use an email provider with an HTTPS API instead.
+### 9.3 Email notifications (Resend)
+Create a Resend API key and set `RESEND_API_KEY` on Render. For testing without a domain, use `RESEND_FROM_EMAIL=onboarding@resend.dev` and send only to an address allowed by Resend's test mode. To email passengers, verify a domain in Resend and set `RESEND_FROM_EMAIL` to an address on that domain. Set `SOS_ALERT_EMAIL` separately if emergency email alerts are needed.
 
 ### 9.4 TURN relay (strongly recommended for real voice-call testing)
 WebRTC audio is peer-to-peer. Over STUN only, calls between devices on mobile data or strict Wi-Fi may connect with **no audio**. A free TURN relay fixes this:
@@ -357,7 +356,7 @@ docker compose --profile ai up --build
 
 **Backend (Render)** — see `server/.env.example` for comments
 
-`NODE_ENV`, `PORT` (auto), `MONGO_URI`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `CORS_ORIGINS`, `TRUST_PROXY`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `AI_SERVICE_URL`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`, `TWILIO_EXECUTIVE_FALLBACK_NUMBER`, `TWILIO_WHATSAPP_FROM`, `TWILIO_WHATSAPP_JOIN_CODE`, `EMAIL_USER`, `EMAIL_PASS`, `EMAIL_FROM_NAME`, `SOS_ALERT_EMAIL`; seed-only: `ALLOW_SEED`, `SEED_PASSWORD`
+`NODE_ENV`, `PORT` (auto), `MONGO_URI`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `CORS_ORIGINS`, `TRUST_PROXY`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `AI_SERVICE_URL`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`, `TWILIO_EXECUTIVE_FALLBACK_NUMBER`, `TWILIO_WHATSAPP_FROM`, `TWILIO_WHATSAPP_JOIN_CODE`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `EMAIL_FROM_NAME`, `SOS_ALERT_EMAIL`; seed-only: `ALLOW_SEED`, `SEED_PASSWORD`
 
 **Frontend (Vercel, build-time)** — see `client/.env.example`
 

@@ -42,10 +42,10 @@ services:
         sync: false
       - key: TWILIO_WHATSAPP_JOIN_CODE
         sync: false
-      - key: EMAIL_USER
+      - key: RESEND_API_KEY
         sync: false
-      - key: EMAIL_PASS
-        sync: false
+      - key: RESEND_FROM_EMAIL
+        value: onboarding@resend.dev
       - key: EMAIL_FROM_NAME
         value: Indian Railways SRLMS
       - key: SOS_ALERT_EMAIL

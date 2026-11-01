@@ -10,11 +10,9 @@ const Call = require("../models/Call");
 const { scoreUrgency, scoreTranscript, TIER_RANK } = require("../utils/sentiment");
 const { sendEmail } = require("../utils/email");
 
-// Who gets the SOS email. Falls back to EMAIL_USER (i.e. the same Gmail
-// account sends the alert to itself) so this works with zero extra config —
-// set SOS_ALERT_EMAIL in .env to point it at a real ops inbox instead.
-// Comma-separated list supported (nodemailer accepts a comma-joined `to`).
-const SOS_ALERT_EMAIL = process.env.SOS_ALERT_EMAIL || process.env.EMAIL_USER || null;
+// Set SOS_ALERT_EMAIL explicitly to the operations inbox for emergency alerts.
+// Comma-separated recipients are supported.
+const SOS_ALERT_EMAIL = process.env.SOS_ALERT_EMAIL || null;
 
 function attachSignaling(io) {
   io.use((socket, next) => {
@@ -351,7 +349,7 @@ function attachSignaling(io) {
             `Emergency SOS button was pressed.\n\nPassenger: ${alert.customerName}\nPNR: ${alert.pnr || "not provided"}\nTime: ${new Date(alert.at).toLocaleString("en-IN")}\n\nThe passenger is being connected to the next available executive in-app now. This email is a backup alert in case no executive is online to see the dashboard banner.\n\n— Indian Railways SRLMS`
           ).catch(() => {});
         } else {
-          console.log("[sos] SOS_ALERT_EMAIL/EMAIL_USER not set — skipping SOS email alert");
+          console.log("[sos] SOS_ALERT_EMAIL not set — skipping SOS email alert");
         }
       }
 
