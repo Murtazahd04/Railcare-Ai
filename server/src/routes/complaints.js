@@ -14,7 +14,7 @@ const router = express.Router();
 const supportStaff = ["executive", "supervisor", "admin", "super_admin"];
 const supportResponseSchema = z.object({
   status: z.enum(["open", "in_progress", "resolved", "rejected"]),
-  staffReply: z.string().trim().min(1).max(2000),
+  staffReply: z.string().trim().min(1).max(2000).optional(),
 });
 
 function timeAgo(date) {
@@ -31,9 +31,9 @@ router.get("/", requireAuth, async (req, res) => {
 });
 
 router.get("/queue", requireAuth, requireRole(...supportStaff), async (_req, res) => {
-  const complaints = await Complaint.find({ status: { $in: ["open", "in_progress"] } })
-    .sort({ createdAt: 1 })
-    .limit(100);
+  const complaints = await Complaint.find()
+    .sort({ updatedAt: -1 })
+    .limit(200);
   res.json(complaints);
 });
 
@@ -99,13 +99,16 @@ router.patch("/:id", requireAuth, requireRole(...supportStaff), validateBody(sup
   const previous = await Complaint.findById(req.params.id);
   if (!previous) return res.status(404).json({ error: "Not found" });
 
-  const c = await Complaint.findByIdAndUpdate(req.params.id, {
-    status: req.body.status,
-    staffReply: req.body.staffReply,
-    respondedBy: req.user.name,
-    respondedByRole: req.user.role,
-    respondedAt: new Date(),
-  }, { new: true, runValidators: true });
+  const update = { status: req.body.status };
+  if (req.body.staffReply !== undefined) {
+    Object.assign(update, {
+      staffReply: req.body.staffReply,
+      respondedBy: req.user.name,
+      respondedByRole: req.user.role,
+      respondedAt: new Date(),
+    });
+  }
+  const c = await Complaint.findByIdAndUpdate(req.params.id, update, { new: true, runValidators: true });
 
   // notify the passenger over WhatsApp the moment their complaint flips to resolved
   // (no-ops gracefully if Twilio isn't configured — see utils/whatsapp.js)

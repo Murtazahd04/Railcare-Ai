@@ -17,7 +17,7 @@ const router = express.Router();
 const supportStaff = ["executive", "supervisor", "admin", "super_admin"];
 const supportResponseSchema = z.object({
   status: z.enum(["open", "in_progress", "resolved", "rejected"]),
-  staffReply: z.string().trim().min(1).max(2000),
+  staffReply: z.string().trim().min(1).max(2000).optional(),
 });
 
 /**
@@ -56,9 +56,9 @@ router.get("/me/tickets", requireAuth, requireRole("passenger"), async (req, res
 });
 
 router.get("/support-tickets", requireAuth, requireRole(...supportStaff), async (_req, res) => {
-  const tickets = await Ticket.find({ status: { $in: ["open", "in_progress"] } })
-    .sort({ createdAt: 1 })
-    .limit(100);
+  const tickets = await Ticket.find()
+    .sort({ updatedAt: -1 })
+    .limit(200);
   res.json(tickets);
 });
 
@@ -68,13 +68,16 @@ router.patch(
   requireRole(...supportStaff),
   validateBody(supportResponseSchema),
   async (req, res) => {
-    const ticket = await Ticket.findByIdAndUpdate(req.params.id, {
-      status: req.body.status,
-      staffReply: req.body.staffReply,
-      respondedBy: req.user.name,
-      respondedByRole: req.user.role,
-      respondedAt: new Date(),
-    }, { new: true, runValidators: true });
+    const update = { status: req.body.status };
+    if (req.body.staffReply !== undefined) {
+      Object.assign(update, {
+        staffReply: req.body.staffReply,
+        respondedBy: req.user.name,
+        respondedByRole: req.user.role,
+        respondedAt: new Date(),
+      });
+    }
+    const ticket = await Ticket.findByIdAndUpdate(req.params.id, update, { new: true, runValidators: true });
     if (!ticket) return res.status(404).json({ error: "Not found" });
     res.json(ticket);
   }

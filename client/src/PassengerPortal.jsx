@@ -806,10 +806,9 @@ export default function PassengerPortal() {
 
   const inRealCall = engine.status !== "idle";
 
-  // Quick autofill for login demo
+  // Fill the demo passenger username without pre-filling credentials.
   function autofillUser(u) {
     setUsername(u);
-    setPassword("password123");
   }
 
   // =========================================================================
