@@ -878,12 +878,12 @@ function LiveTester({ token }) {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const classifierLabel = result?.source === "fastembed-multilingual"
-    ? "Python embeddings active"
+  const classifierLabel = result?.source === "fastembed-english"
+    ? "Python English embeddings active"
     : result?.source === "local-lexical"
-      ? "Node.js lexical fallback"
+      ? "Node.js lexical classifier"
       : "Unknown classifier";
-  const classifierTone = result?.source === "fastembed-multilingual"
+  const classifierTone = result?.source === "fastembed-english"
     ? "bg-[#2FBF71]/10 border-[#2FBF71]/30 text-[#16854A]"
     : "bg-[#F5A623]/10 border-[#F5A623]/30 text-[#9A6700]";
 
@@ -908,7 +908,7 @@ function LiveTester({ token }) {
         <PlayCircle size={15} className="text-[#2FBF71]" /> Try it — test the live classifier
       </div>
       <p className="text-[11px] text-[#64748B] mb-3">
-        Select a classifier for this test only. Auto uses Python when available and otherwise falls back to Node.js.
+        Python uses a compact English model. Auto routes Hindi script and common Hinglish markers to Node.js; other queries try Python, then fall back to Node.js if Python is unavailable. Add matching native-script or transliterated KB phrases.
       </p>
       <form onSubmit={runTest} className="flex flex-col sm:flex-row gap-2 mb-3">
         <input

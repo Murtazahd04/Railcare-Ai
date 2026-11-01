@@ -257,7 +257,7 @@ WebRTC audio is peer-to-peer. Over STUN only, calls between devices on mobile da
 These values ship to every browser (that is inherent to WebRTC TURN). Use the provider's limited free credentials, never anything privileged.
 
 ### 9.5 AI intent service (Python on Render Free)
-The Blueprint now defines a separate `srlms-ai-classifier` Python web service. It uses FastEmbed/ONNX Runtime with the multilingual `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` model and excludes PyTorch, Whisper and Piper from the free deployment. The model is downloaded during the Render build; the free service uses CPU inference and can spin down after inactivity.
+The Blueprint now defines a separate `srlms-ai-classifier` Python web service. After the multilingual MiniLM model exceeded Render Free's 512 MB memory limit, the service was switched to FastEmbed/ONNX Runtime with the smaller, English-focused `sentence-transformers/all-MiniLM-L6-v2` model (about 0.09 GB in FastEmbed's supported-model catalog). It excludes PyTorch, Whisper and Piper. The model is downloaded during the Render build; the free service uses CPU inference and can spin down after inactivity. Phrase embeddings are computed in small batches to limit peak memory.
 
 1. Deploy or sync the Blueprint. The Node API and Python classifier must be in the same Render region (the Blueprint sets both to Singapore).
 2. In Render, open the Python service and copy its public `onrender.com` URL into the Node service's `AI_SERVICE_URL` environment variable.
@@ -267,7 +267,7 @@ The Blueprint now defines a separate `srlms-ai-classifier` Python web service. I
 
 Render Free services can sleep after 15 minutes without inbound traffic and take about a minute to wake. The Node classifier waits up to 8 seconds by default; if the Python service is still waking, the current query uses the Node lexical fallback and subsequent queries can use embeddings once the Python service is ready. This is a free-tier tradeoff, not a guaranteed always-on real-time inference service. Speech-to-text and text-to-speech dependencies are only available through `ai-service/requirements-local.txt`; browser speech APIs remain the production fallback.
 
-The model's multilingual label is not a guarantee of Hinglish transliteration accuracy. A local smoke test scored an English paraphrase well but matched the sample "Mera kambal nahi mila" poorly against English-only examples. Add representative Hindi-script and Hinglish questions or synonyms to the admin knowledge base, then test a labeled sample set before relying on those languages in production. Cosine similarity values are not accuracy percentages.
+The compact Python model is English-focused and does not provide dependable Hindi/Hinglish semantic matching. In Auto mode, Devanagari and common Hinglish markers are routed to Node's lexical classifier; other queries try Python then fall back to Node if unavailable. This language detection is heuristic, so add Hindi-script and Hinglish questions/synonyms to the knowledge base and verify with the Admin classifier selector. Run labeled tests before relying on either classifier for a language. Cosine similarity values are not accuracy percentages.
 
 ---
 

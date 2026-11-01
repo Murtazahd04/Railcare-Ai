@@ -1,7 +1,7 @@
 """
 SRLMS AI microservice.
 
-The Render-friendly deployment provides multilingual intent classification
+The Render-friendly deployment provides lightweight English intent classification
 with FastEmbed/ONNX. Speech-to-text and text-to-speech remain optional local
 features; the client falls back to browser speech APIs when they are absent.
 """
@@ -26,7 +26,7 @@ app = FastAPI(title="SRLMS AI Service")
 
 EMBEDDING_MODEL = os.environ.get(
     "EMBEDDING_MODEL",
-    "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+    "sentence-transformers/all-MiniLM-L6-v2",
 )
 _embedder = None
 _embedder_lock = threading.Lock()
@@ -99,8 +99,11 @@ def embed_texts(texts):
             _embedding_cache.clear()
             missing = list(dict.fromkeys(texts))
         if missing:
-            vectors = list(get_embedder().embed(missing))
-            _embedding_cache.update(zip(missing, vectors))
+            embedder = get_embedder()
+            for start in range(0, len(missing), 16):
+                batch = missing[start : start + 16]
+                vectors = list(embedder.embed(batch, batch_size=16))
+                _embedding_cache.update(zip(batch, vectors))
         return [_embedding_cache[text] for text in texts]
 
 

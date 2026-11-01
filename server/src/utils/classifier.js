@@ -4,7 +4,7 @@
  * This is intentionally simple (token-overlap + keyword/synonym scoring)
  * so the whole project runs on localhost with zero extra infrastructure.
  * It is a drop-in replacement point: swap `scoreIntent` for a call to a
- * Python FastAPI service running multilingual ONNX embeddings, with the
+ * Python FastAPI service running compact English ONNX embeddings, with the
  * local lexical scorer retained as a fallback — `classify()` is the only
  * entry point routes depend on.
  */
@@ -13,6 +13,11 @@ const STOPWORDS = new Set([
   "the", "a", "an", "is", "are", "my", "i", "to", "of", "in", "on", "for",
   "hai", "ka", "ki", "ke", "mera", "meri", "mujhe", "kya", "aur", "please",
 ]);
+const HINDI_LATIN_MARKERS = new Set([
+  "aur", "chahiye", "gaya", "gayi", "hai", "hain", "ka", "kab", "kaise",
+  "ke", "kha", "kahan", "ki", "ko", "kya", "mein", "mera", "mere", "meri",
+  "mila", "mili", "mujhe", "nahin", "nahi", "takia",
+]);
 
 function tokenize(text) {
   return (text || "")
@@ -20,6 +25,16 @@ function tokenize(text) {
     .replace(/[^a-z0-9\u0900-\u097F\s]/g, " ")
     .split(/\s+/)
     .filter((t) => t && !STOPWORDS.has(t));
+}
+
+function containsHindiOrHinglish(text) {
+  const normalized = (text || "").toLowerCase();
+  if (/[\u0900-\u097F]/.test(normalized)) return true;
+
+  const words = normalized
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/);
+  return words.some((word) => HINDI_LATIN_MARKERS.has(word));
 }
 
 function jaccard(setA, setB) {
@@ -139,7 +154,7 @@ async function tryRemoteClassify(utterance, intents, { strict = false, timeoutOv
       intent: matchedDoc,
       confidence: data.confidence ?? 0,
       ranked: data.ranked || [],
-      source: "fastembed-multilingual",
+      source: "fastembed-english",
     };
   } catch (err) {
     if (err.name === "AbortError") {
@@ -173,6 +188,8 @@ async function classify(utterance, intents, { mode = "auto", timeoutMs } = {}) {
     const remote = await tryRemoteClassify(utterance, intents, { strict: true, timeoutOverrideMs: timeoutMs });
     return remote;
   }
+
+  if (containsHindiOrHinglish(utterance)) return classifyLocal(utterance, intents);
 
   const remote = await tryRemoteClassify(utterance, intents);
   if (remote) return remote;

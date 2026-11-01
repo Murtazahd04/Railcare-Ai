@@ -1575,17 +1575,17 @@ export default function PassengerPortal() {
                   </div>
                   {classifierSource && (
                     <div className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[10px] font-semibold ${
-                      classifierSource === "fastembed-multilingual"
+                      classifierSource === "fastembed-english"
                         ? "border-[#10B981]/30 bg-[#10B981]/10 text-[#059669]"
                         : "border-[#F59E0B]/30 bg-[#F59E0B]/10 text-[#B45309]"
                     }`}>
                       <span className={`h-1.5 w-1.5 rounded-full ${
-                        classifierSource === "fastembed-multilingual" ? "bg-[#10B981]" : "bg-[#F59E0B]"
+                        classifierSource === "fastembed-english" ? "bg-[#10B981]" : "bg-[#F59E0B]"
                       }`} />
-                      {classifierSource === "fastembed-multilingual"
-                        ? "Python AI embeddings handled this query"
+                      {classifierSource === "fastembed-english"
+                        ? "Python English AI embeddings handled this query"
                         : classifierSource === "local-lexical"
-                          ? "Node.js fallback handled this query"
+                          ? "Node.js lexical classifier handled this query"
                           : "Classifier source unavailable"}
                     </div>
                   )}

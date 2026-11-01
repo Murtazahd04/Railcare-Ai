@@ -45,7 +45,7 @@ flowchart TB
     subgraph AI_Intelligence["3. AI & SPEECH INTELLIGENCE TIER"]
         direction TB
         PY_FAST["Python FastAPI Microservice (Port 8001)\n(ai-service/main.py)"]
-        ST_EMB["FastEmbed / ONNX Runtime\n(multilingual MiniLM)\nEmbeddings & Cosine Sim"]
+        ST_EMB["FastEmbed / ONNX Runtime\n(all-MiniLM-L6-v2, English)\nEmbeddings & Cosine Sim"]
         WHISPER["Faster-Whisper (base)\nLocal STT Engine"]
         PIPER["Piper TTS (ONNX)\nNeural Voice Generation"]
         LOCAL_FALLBACK["Node.js Local Fallback Engine\n(Token Jaccard + Keyword Scorer)\nZero-dependency backup"]
@@ -131,7 +131,7 @@ Built with **React 18**, **Vite**, **Tailwind CSS**, **Lucide Icons**, and **Rec
     *   **Force-Transfer**: Moves an active call from one executive to another without either party redialing.
 *   **Admin Training Dashboard (`AdminTrainingDashboard.jsx` / `#/admin`)**:
     *   8-Step Intent Creation Wizard: Category $\rightarrow$ Intent Name $\rightarrow$ Training Questions $\rightarrow$ Synonyms $\rightarrow$ Keywords $\rightarrow$ Action $\rightarrow$ Answer Template $\rightarrow$ Confidence Threshold.
-    *   Live Tester: Simulates utterances against multilingual FastEmbed embeddings or the local lexical classifier.
+    *   Live Tester: Simulates utterances against compact English FastEmbed embeddings or the local lexical classifier.
     *   Unanswered Query Review Queue: Lists real queries that failed classification thresholds, allowing administrators to convert them into trained intents with one click.
 *   **RFID Lifecycle Console (`RfidLifecycleView.jsx` / `#/rfid`)**:
     *   Visual 7-stage supply chain flow tracking linen kits through Laundry, Store, Transport, Train, Coach, Berth, and Return.
@@ -158,7 +158,7 @@ Built with **Node.js**, **Express**, **Socket.IO**, and **Mongoose**.
 
 ### 3.3. AI Microservice (`ai-service/`)
 A Python microservice built with **FastAPI**, **Uvicorn**, and **FastEmbed**.
-*   **Embeddings Classifier (`POST /classify`)**: Uses the multilingual `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` model through FastEmbed/ONNX Runtime. It compares 384-dimensional utterance and knowledge-base embeddings using cosine similarity. The API accepts a shared bearer token in production. Multilingual model support does not guarantee robust transliteration: include real Hindi/Hinglish knowledge-base examples and validate them with labeled passenger queries.
+*   **Embeddings Classifier (`POST /classify`)**: Uses the compact English `sentence-transformers/all-MiniLM-L6-v2` model through FastEmbed/ONNX Runtime. It compares 384-dimensional utterance and knowledge-base embeddings using cosine similarity. The API accepts a shared bearer token in production. Auto mode routes Devanagari and common Hinglish markers to the Node lexical classifier; add matching Hindi-script and transliterated knowledge-base examples.
 *   **Render deployment**: The free-tier service installs only the lightweight ONNX classification dependencies and pre-downloads the model at build time. Free instances can sleep when idle; the Node backend falls back to its lexical classifier when the AI service is unavailable or slow.
 *   **Optional local speech endpoints (`POST /stt`, `POST /tts`)**: Install `requirements-local.txt` to enable Faster-Whisper and Piper locally. These larger dependencies are excluded from the Render free-tier deployment; the app falls back to browser speech APIs.
 
@@ -178,7 +178,7 @@ sequenceDiagram
     actor E as Executive (Dashboard)
 
     P->>B: POST /public/ai-query { utterance: "mera kambal nahi mila" }
-    B->>AI: POST /classify (FastEmbed multilingual embeddings)
+    B->>AI: POST /classify (FastEmbed English embeddings)
     alt AI Microservice Available
         AI-->>B: { matchedIntent: "Missing Blanket", confidence: 0.88 }
     else AI Microservice Offline
@@ -322,7 +322,7 @@ flowchart TD
 | **Twilio Voice (Outbound Callback)** | Dialing a passenger's actual mobile number when WebRTC lines are busy or an agent triggers a callback. | `server/src/utils/twilioCall.js`, `routes/voice.js` | `TWILIO_EXECUTIVE_FALLBACK_NUMBER` | **Functional (Trial Restricted)** | Inline TwiML requires no public ngrok tunnel. Trial accounts can only dial numbers pre-verified in the Twilio Console. |
 | **Twilio WhatsApp** | Automated passenger notifications for complaint registration, resolution, fines, and escalation. | `server/src/utils/whatsapp.js`, `routes/telephony.js` | `TWILIO_WHATSAPP_FROM`, `TWILIO_WHATSAPP_JOIN_CODE` | **Functional (Sandbox Mode)** | Twilio Sandbox constraint: Recipients must first message the sandbox number once with the join code (e.g., `join twilio-trial`). |
 | **Resend Email API** | Transactional emails for fine payment QR attachments, complaint receipts, and emergency SOS alerts. | `server/src/utils/email.js`, `socket/signaling.js` | `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `SOS_ALERT_EMAIL` | **Configured** | Uses Resend's HTTPS API. `onboarding@resend.dev` is suitable for testing; passenger delivery requires a verified sending domain. |
-| **FastEmbed / ONNX Runtime** | Multilingual 384-dimension embeddings (`paraphrase-multilingual-MiniLM-L12-v2`) for semantic intent ranking. | `ai-service/main.py` | `AI_SERVICE_URL`, `AI_SERVICE_TOKEN` | **Deployable on Render Free** | Model is pre-downloaded during build; free service may sleep after idle. The Node backend falls back to lexical scoring on unavailable/slow AI. |
+| **FastEmbed / ONNX Runtime** | Compact English 384-dimension embeddings (`all-MiniLM-L6-v2`) for semantic intent ranking. | `ai-service/main.py` | `AI_SERVICE_URL`, `AI_SERVICE_TOKEN` | **Targeted at Render Free (verify under memory limit)** | Model is pre-downloaded during build; free service may sleep after idle. The Node backend falls back to lexical scoring on unavailable/slow AI. This model is English-focused. |
 | **Faster-Whisper** | Optional local speech-to-text on uploaded audio. | `ai-service/main.py`, `server/src/routes/voice.js` | Local-only optional dependencies | **Optional local install** | Install `ai-service/requirements-local.txt`; excluded from Render free deployment. Browser Web Speech API remains the fallback. |
 | **Piper TTS** | Optional local neural text-to-speech. | `ai-service/main.py`, `server/src/routes/voice.js` | `PIPER_VOICE_PATH` | **Optional local install** | Requires the local Piper dependency and ONNX voice file; excluded from Render free deployment. Browser speech synthesis remains the fallback. |
 | **Web Speech API** | Browser-native speech recognition and speech synthesis. | `client/src/voice.js` | N/A (Native browser API) | **Fully Functional** | Speech recognition is natively supported in Chromium browsers (Chrome, Edge); falls back to typing in Firefox/Safari. |
