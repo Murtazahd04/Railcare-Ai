@@ -38,7 +38,8 @@ export function useCallEngine({ socket, role, name }) {
   const remoteStreamRef = useRef(null); // raw MediaStream, used for call recording
   const remoteAudioRef = useRef(null); // attach to an <audio autoPlay> element
   const internalAudioRef = useRef(null); // persistent audio player immune to React view re-renders
-  const pendingCandidatesRef = useRef([]); // ICE candidate queue to prevent dropping candidates before remote description is set
+  const pendingCandidatesRef = useRef(new Map());
+  const activePeerKeyRef = useRef(null);
   const targetIdRef = useRef(null); // socket id of current call partner
   const callIdRef = useRef(null);
   const monitorPcRef = useRef(null); // separate connection feeding a supervisor's "listen in"
@@ -91,8 +92,11 @@ export function useCallEngine({ socket, role, name }) {
     return stream;
   }, [role]);
 
-  function closePeer() {
-    pendingCandidatesRef.current = [];
+  function closePeer(preservePendingKey = null) {
+    if (activePeerKeyRef.current && activePeerKeyRef.current !== preservePendingKey) {
+      pendingCandidatesRef.current.delete(activePeerKeyRef.current);
+    }
+    activePeerKeyRef.current = null;
     if (pcRef.current) {
       pcRef.current.close();
       pcRef.current = null;
@@ -104,30 +108,35 @@ export function useCallEngine({ socket, role, name }) {
     if (remoteAudioRef.current) remoteAudioRef.current.srcObject = null;
   }
 
-  const addCandidate = useCallback(async (candidate) => {
+  const addCandidate = useCallback(async (candidate, callId, fromId) => {
+    if (!candidate || !callId || !fromId) return;
+    const key = `${callId}:${fromId}`;
     const pc = pcRef.current;
-    if (!pc || !candidate) return;
-    if (pc.remoteDescription && pc.remoteDescription.type) {
+    if (pc && activePeerKeyRef.current === key && pc.remoteDescription?.type) {
       try {
         await pc.addIceCandidate(new RTCIceCandidate(candidate));
       } catch (err) {
         console.warn("[webrtc] addIceCandidate error:", err);
       }
     } else {
-      // Buffer early ICE candidate until setRemoteDescription completes
-      pendingCandidatesRef.current.push(candidate);
+      const candidates = pendingCandidatesRef.current.get(key) || [];
+      candidates.push(candidate);
+      pendingCandidatesRef.current.set(key, candidates);
     }
   }, []);
 
-  const flushPendingCandidates = useCallback(async () => {
+  const flushPendingCandidates = useCallback(async (key) => {
     const pc = pcRef.current;
-    if (!pc || !pc.remoteDescription) return;
-    while (pendingCandidatesRef.current.length > 0) {
-      const candidate = pendingCandidatesRef.current.shift();
-      try {
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
-      } catch (err) {
-        console.warn("[webrtc] error applying buffered candidate:", err);
+    if (!pc || activePeerKeyRef.current !== key || !pc.remoteDescription) return;
+    while (pendingCandidatesRef.current.has(key)) {
+      const candidates = pendingCandidatesRef.current.get(key);
+      pendingCandidatesRef.current.delete(key);
+      for (const candidate of candidates) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (err) {
+          console.warn("[webrtc] error applying buffered candidate:", err);
+        }
       }
     }
   }, []);
@@ -137,11 +146,13 @@ export function useCallEngine({ socket, role, name }) {
     if (remoteAudioRef.current) remoteAudioRef.current.play?.().catch(() => {});
   }, []);
 
-  async function buildPeerConnection(targetId, isOfferer) {
-    closePeer();
+  async function buildPeerConnection(targetId, isOfferer, peerCallId) {
+    const key = `${peerCallId}:${targetId}`;
+    closePeer(key);
     const stream = await ensureLocalStream();
     const pc = new RTCPeerConnection(ICE_SERVERS);
     pcRef.current = pc;
+    activePeerKeyRef.current = key;
     targetIdRef.current = targetId;
 
     stream.getTracks().forEach((track) => pc.addTrack(track, stream));
@@ -175,7 +186,7 @@ export function useCallEngine({ socket, role, name }) {
     pc.onicecandidate = (event) => {
       if (event.candidate) {
         socket.emit("webrtc:ice-candidate", {
-          callId: callIdRef.current,
+          callId: peerCallId,
           targetId,
           candidate: event.candidate,
         });
@@ -185,7 +196,7 @@ export function useCallEngine({ socket, role, name }) {
     if (isOfferer) {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      socket.emit("webrtc:offer", { callId: callIdRef.current, targetId, sdp: offer });
+      socket.emit("webrtc:offer", { callId: peerCallId, targetId, sdp: offer });
     }
     return pc;
   }
@@ -223,11 +234,14 @@ export function useCallEngine({ socket, role, name }) {
       setQueueInfo(null);
     };
     const onAccepted = async ({ callId: cid, executiveId }) => {
+      callIdRef.current = cid;
       setCallId(cid);
       setStatus("connected");
-      await buildPeerConnection(executiveId, true);
+      await buildPeerConnection(executiveId, true, cid);
     };
     const onRejected = () => {
+      callIdRef.current = null;
+      pendingCandidatesRef.current.clear();
       setStatus("idle");
       setCallId(null);
       setError("Call was declined.");
@@ -252,23 +266,26 @@ export function useCallEngine({ socket, role, name }) {
 
     // shared
     const onOffer = async ({ callId: cid, fromId, sdp }) => {
+      callIdRef.current = cid;
       setCallId(cid);
-      const pc = await buildPeerConnection(fromId, false);
+      const pc = await buildPeerConnection(fromId, false, cid);
       await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-      await flushPendingCandidates();
+      await flushPendingCandidates(`${cid}:${fromId}`);
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       socket.emit("webrtc:answer", { callId: cid, targetId: fromId, sdp: answer });
       setStatus("connected");
     };
-    const onAnswer = async ({ sdp }) => {
-      if (pcRef.current) {
-        await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
-        await flushPendingCandidates();
+    const onAnswer = async ({ callId: cid, fromId, sdp }) => {
+      const pc = pcRef.current;
+      const key = `${cid}:${fromId}`;
+      if (pc && activePeerKeyRef.current === key) {
+        await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+        await flushPendingCandidates(key);
       }
     };
-    const onIceCandidate = async ({ candidate }) => {
-      await addCandidate(candidate);
+    const onIceCandidate = async ({ callId: cid, fromId, candidate }) => {
+      await addCandidate(candidate, cid, fromId);
     };
     const onTransferring = ({ newExecutiveName }) => {
       setStatus("transferring");
@@ -277,6 +294,8 @@ export function useCallEngine({ socket, role, name }) {
     };
     const onEnded = ({ endedBy } = {}) => {
       closePeer();
+      pendingCandidatesRef.current.clear();
+      callIdRef.current = null;
       setStatus("ended");
       setEndInfo(role === "customer" ? { endedBy: endedBy || null } : null);
       setTimeout(() => setStatus("idle"), 1200);
@@ -399,6 +418,8 @@ export function useCallEngine({ socket, role, name }) {
   const endCall = useCallback(() => {
     if (callIdRef.current) socket.emit("call:end", { callId: callIdRef.current });
     closePeer();
+    pendingCandidatesRef.current.clear();
+    callIdRef.current = null;
     setStatus("idle");
     setCallId(null);
     setPeerName(null);
