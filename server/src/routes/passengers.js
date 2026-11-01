@@ -14,6 +14,11 @@ const { sendWhatsAppMessage } = require("../utils/whatsapp");
 const { sendEmail } = require("../utils/email");
 
 const router = express.Router();
+const supportStaff = ["executive", "supervisor", "admin", "super_admin"];
+const supportResponseSchema = z.object({
+  status: z.enum(["open", "in_progress", "resolved", "rejected"]),
+  staffReply: z.string().trim().min(1).max(2000),
+});
 
 /**
  * Passenger Portal self-service routes — the logged-in passenger's own
@@ -49,6 +54,31 @@ router.get("/me/tickets", requireAuth, requireRole("passenger"), async (req, res
   const tickets = await Ticket.find({ passengerId: req.user.passengerId }).sort({ createdAt: -1 });
   res.json(tickets);
 });
+
+router.get("/support-tickets", requireAuth, requireRole(...supportStaff), async (_req, res) => {
+  const tickets = await Ticket.find({ status: { $in: ["open", "in_progress"] } })
+    .sort({ createdAt: 1 })
+    .limit(100);
+  res.json(tickets);
+});
+
+router.patch(
+  "/support-tickets/:id",
+  requireAuth,
+  requireRole(...supportStaff),
+  validateBody(supportResponseSchema),
+  async (req, res) => {
+    const ticket = await Ticket.findByIdAndUpdate(req.params.id, {
+      status: req.body.status,
+      staffReply: req.body.staffReply,
+      respondedBy: req.user.name,
+      respondedByRole: req.user.role,
+      respondedAt: new Date(),
+    }, { new: true, runValidators: true });
+    if (!ticket) return res.status(404).json({ error: "Not found" });
+    res.json(ticket);
+  }
+);
 
 router.post(
   "/me/tickets",

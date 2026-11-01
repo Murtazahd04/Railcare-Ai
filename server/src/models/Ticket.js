@@ -9,6 +9,10 @@ const ticketSchema = new mongoose.Schema(
     subCategory: { type: String, required: true },
     description: { type: String },
     status: { type: String, enum: ["open", "in_progress", "resolved", "rejected"], default: "open" },
+    staffReply: { type: String, trim: true, maxlength: 2000 },
+    respondedBy: { type: String },
+    respondedByRole: { type: String },
+    respondedAt: { type: Date },
   },
   { timestamps: true }
 );

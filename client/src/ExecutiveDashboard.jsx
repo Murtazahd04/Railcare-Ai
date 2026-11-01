@@ -4,6 +4,7 @@ import { io } from "socket.io-client";
 import {
   Phone, TrendingUp, AlertCircle, FileText, QrCode, StickyNote, Train,
   CheckCircle2, XCircle, Search, LogOut, Tag, Ticket, Trash2, PhoneCall, Siren,
+  MessageCircle, RefreshCw,
 } from "lucide-react";
 import { useCallEngine } from "./useCallEngine";
 import ExecutiveLiveCallPanel from "./ExecutiveLiveCallPanel";
@@ -132,6 +133,11 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
   const [detailModal, setDetailModal] = useState(null); // the full Call record being inspected
   const [detailProfile, setDetailProfile] = useState(null);
   const [sosAlerts, setSosAlerts] = useState([]); // recent SOS presses — stays on screen until dismissed
+  const [supportCases, setSupportCases] = useState([]);
+  const [supportReplies, setSupportReplies] = useState({});
+  const [supportQueueLoading, setSupportQueueLoading] = useState(false);
+  const [supportQueueError, setSupportQueueError] = useState(null);
+  const [savingSupportCase, setSavingSupportCase] = useState(null);
   const toastIdRef = useRef(0);
   const lastStatusRef = useRef("idle");
 
@@ -188,6 +194,80 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
     setToasts((t) => [...t, { id, msg, tone }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3400);
   }, []);
+
+  const refreshSupportQueue = useCallback(async () => {
+    setSupportQueueLoading(true);
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      const [complaintRes, ticketRes] = await Promise.all([
+        fetch(`${API_BASE}/complaints/queue`, { headers }),
+        fetch(`${API_BASE}/passengers/support-tickets`, { headers }),
+      ]);
+      const [complaints, tickets] = await Promise.all([
+        complaintRes.json().catch(() => ({})),
+        ticketRes.json().catch(() => ({})),
+      ]);
+      if (!complaintRes.ok) throw new Error(complaints.error || "Could not load journey issues");
+      if (!ticketRes.ok) throw new Error(tickets.error || "Could not load general support queries");
+      setSupportCases([
+        ...complaints.map((record) => ({ kind: "journey", record })),
+        ...tickets.map((record) => ({ kind: "general", record })),
+      ].sort((a, b) => new Date(a.record.createdAt) - new Date(b.record.createdAt)));
+      setSupportQueueError(null);
+    } catch (err) {
+      setSupportQueueError(err.message);
+    } finally {
+      setSupportQueueLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    refreshSupportQueue();
+    const interval = setInterval(refreshSupportQueue, 15000);
+    return () => clearInterval(interval);
+  }, [refreshSupportQueue]);
+
+  async function handleSupportReply(kind, record) {
+    const key = `${kind}-${record._id}`;
+    const staffReply = (supportReplies[key] || "").trim();
+    if (!staffReply) return;
+    setSavingSupportCase(key);
+    setSupportQueueError(null);
+    try {
+      const path = kind === "journey"
+        ? `/complaints/${record._id}`
+        : `/passengers/support-tickets/${record._id}`;
+      await apiPatch(path, { status: "in_progress", staffReply });
+      setSupportReplies((replies) => ({ ...replies, [key]: "" }));
+      pushToast("Reply sent to passenger");
+      await refreshSupportQueue();
+    } catch (err) {
+      setSupportQueueError(`Could not send reply: ${err.message}`);
+    } finally {
+      setSavingSupportCase(null);
+    }
+  }
+
+  async function handleResolveSupportCase(kind, record) {
+    const key = `${kind}-${record._id}`;
+    const staffReply = (supportReplies[key] || "").trim();
+    if (!staffReply) return;
+    setSavingSupportCase(key);
+    setSupportQueueError(null);
+    try {
+      const path = kind === "journey"
+        ? `/complaints/${record._id}`
+        : `/passengers/support-tickets/${record._id}`;
+      await apiPatch(path, { status: "resolved", staffReply });
+      setSupportReplies((replies) => ({ ...replies, [key]: "" }));
+      pushToast("Query resolved and reply sent");
+      await refreshSupportQueue();
+    } catch (err) {
+      setSupportQueueError(`Could not resolve query: ${err.message}`);
+    } finally {
+      setSavingSupportCase(null);
+    }
+  }
 
   useEffect(() => {
     const onSos = (alert) => {
@@ -484,6 +564,90 @@ export default function ExecutiveDashboard({ user, token, onLogout }) {
       </div>
 
       <div className="px-4 sm:px-6 py-5 space-y-5">
+        <section className="rounded-lg border border-[#E2E8F0] bg-[#FFFFFF] overflow-hidden">
+          <div className="px-4 py-3 border-b border-[#E2E8F0] flex items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-medium uppercase tracking-wider text-[#0F172A]">Passenger Support Queue</div>
+              <div className="text-[11px] text-[#64748B] mt-1">Executives handle journey issues and general support queries.</div>
+            </div>
+            <button
+              onClick={refreshSupportQueue}
+              disabled={supportQueueLoading}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-[#E2E8F0] text-[11px] text-[#475569] disabled:opacity-50"
+            >
+              <RefreshCw size={12} className={supportQueueLoading ? "animate-spin" : ""} /> Refresh
+            </button>
+          </div>
+          {supportQueueError && (
+            <div className="px-4 py-2 text-xs text-[#B42318] bg-[#FEF3F2]">{supportQueueError}</div>
+          )}
+          {supportCases.length === 0 ? (
+            <div className="p-6 text-center text-xs text-[#64748B]">
+              {supportQueueLoading ? "Loading passenger queries…" : "No open passenger queries."}
+            </div>
+          ) : (
+            <div className="grid gap-3 p-4 md:grid-cols-2">
+              {supportCases.map(({ kind, record }) => {
+                const key = `${kind}-${record._id}`;
+                const reply = supportReplies[key] || "";
+                const saving = savingSupportCase === key;
+                return (
+                  <article key={key} className="rounded-md border border-[#E2E8F0] bg-[#F8FAFC] p-3 space-y-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-[#0F172A]">
+                          <MessageCircle size={13} className="text-[#0284C7]" />
+                          {kind === "journey" ? "Journey issue" : "General support"}
+                        </div>
+                        <div className="mt-1 text-[11px] text-[#64748B]">
+                          {record.passengerName}{record.pnr && ` · PNR ${record.pnr}`}
+                        </div>
+                      </div>
+                      <span className="rounded-full bg-[#F59E0B]/15 px-2 py-0.5 text-[10px] font-semibold uppercase text-[#92400E]">
+                        {record.status.replace("_", " ")}
+                      </span>
+                    </div>
+                    <div className="text-xs font-medium text-[#334155]">
+                      {kind === "journey" ? record.intent : `${record.category} — ${record.subCategory}`}
+                      {kind === "general" && <span className="ml-1 font-mono text-[10px] text-[#64748B]">#{record.concernId}</span>}
+                    </div>
+                    {record.description && <p className="text-xs text-[#475569] whitespace-pre-wrap">{record.description}</p>}
+                    {record.staffReply && (
+                      <div className="rounded bg-white p-2 text-[11px] text-[#475569]">
+                        Previous reply ({record.respondedByRole || "staff"}): {record.staffReply}
+                      </div>
+                    )}
+                    <textarea
+                      value={reply}
+                      onChange={(event) => setSupportReplies((replies) => ({ ...replies, [key]: event.target.value }))}
+                      maxLength={2000}
+                      rows={2}
+                      placeholder="Write a reply for the passenger…"
+                      className="w-full resize-y rounded-md border border-[#CBD5E1] bg-white px-2.5 py-2 text-xs focus:outline-none focus:border-[#0284C7]"
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => handleSupportReply(kind, record)}
+                        disabled={!reply.trim() || saving}
+                        className="rounded-md bg-[#004B87] px-3 py-1.5 text-[11px] font-semibold text-white disabled:opacity-40"
+                      >
+                        {saving ? "Saving…" : "Reply / Keep Open"}
+                      </button>
+                      <button
+                        onClick={() => handleResolveSupportCase(kind, record)}
+                        disabled={!reply.trim() || saving}
+                        className="rounded-md bg-[#16803C] px-3 py-1.5 text-[11px] font-semibold text-white disabled:opacity-40"
+                      >
+                        Resolve with reply
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
         <ExecutiveLiveCallPanel engine={engine} token={token} />
 
         <div className="rounded-lg border border-[#E2E8F0] bg-[#FFFFFF] p-4 space-y-3">

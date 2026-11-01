@@ -339,6 +339,14 @@ export default function PassengerPortal() {
   }, [session]);
 
   useEffect(() => {
+    if (!session || (view !== "ticket-status" && view !== "complaints")) return undefined;
+    const refresh = () => fetchAll(session.token);
+    refresh();
+    const interval = setInterval(refresh, 15000);
+    return () => clearInterval(interval);
+  }, [session, view]);
+
+  useEffect(() => {
     fetch(`${API_BASE}/public/whatsapp-info`)
       .then((r) => r.json())
       .then(setWhatsappInfo)
@@ -2018,6 +2026,16 @@ export default function PassengerPortal() {
                     </div>
                     <div className="text-xs font-semibold">{tCat(tItem.category)} → {tItem.subCategory}</div>
                     {tItem.description && <p className={`text-xs ${theme.textSecondary}`}>{tItem.description}</p>}
+                    {tItem.staffReply && (
+                      <div className="rounded-lg border border-green-500/20 bg-green-500/5 p-3 space-y-1">
+                        <div className="text-[11px] font-bold text-green-700 dark:text-green-400">
+                          Reply from {(tItem.respondedByRole || "support").replace(/_/g, " ")}
+                          {tItem.respondedBy && ` · ${tItem.respondedBy}`}
+                        </div>
+                        <p className={`text-xs ${theme.textSecondary} whitespace-pre-wrap`}>{tItem.staffReply}</p>
+                        {tItem.respondedAt && <div className={`text-[10px] ${theme.textMuted}`}>{fmtDate(tItem.respondedAt)}</div>}
+                      </div>
+                    )}
                     <div className={`text-[10px] ${theme.textMuted}`}>{t("filedOn")} {fmtDate(tItem.createdAt)}</div>
                   </div>
                 ))}
@@ -2094,6 +2112,16 @@ export default function PassengerPortal() {
                       PNR: <span className="font-mono font-medium">{c.pnr}</span> · {t("reference")}: #{c._id.slice(-6).toUpperCase()}
                     </div>
                     {c.description && <p className="text-xs italic">{c.description}</p>}
+                    {c.staffReply && (
+                      <div className="rounded-lg border border-green-500/20 bg-green-500/5 p-3 space-y-1">
+                        <div className="text-[11px] font-bold text-green-700 dark:text-green-400">
+                          Reply from {(c.respondedByRole || "support").replace(/_/g, " ")}
+                          {c.respondedBy && ` · ${c.respondedBy}`}
+                        </div>
+                        <p className={`text-xs ${theme.textSecondary} whitespace-pre-wrap`}>{c.staffReply}</p>
+                        {c.respondedAt && <div className={`text-[10px] ${theme.textMuted}`}>{fmtDate(c.respondedAt)}</div>}
+                      </div>
+                    )}
                     <div className={`text-[10px] ${theme.textMuted}`}>{t("filedOn")} {fmtDate(c.createdAt)}</div>
                   </div>
                 ))}
